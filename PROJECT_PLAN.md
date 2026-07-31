@@ -115,3 +115,26 @@ Branch: `feat/enterprise-template-upgrades`
   frontend build before ticking it.
 - Cross-reference `PROJECT_ROADMAP.md` (feature phases) and `ops.md` (ops runbook).
 - Update this file as items complete; never delete history.
+
+## Post-implementation verification (agent review, 2026-08-01)
+All six phases implemented; a full agent review found 1 false positive + 10 real
+findings, all fixed and re-verified:
+
+| # | Finding | Fix | Status |
+|---|---------|-----|--------|
+| B1 | `deps.py:64` flagged as Python 2 syntax | False positive — `except A, B:` is valid PEP 758 syntax on the project's Python 3.14 target; confirmed imports cleanly in the 3.14 container | N/A |
+| H1 | Cross-tenant org ops (suspend/delete/export/invites/ownership/leave) used header-scoped permission | Switched to path-scoped `_require_permission`; regression test added | Done |
+| H2 | Webhook SSRF (private/metadata targets) | `validate_webhook_url` on create/update | Done (residual DNS-rebinding noted) |
+| H3 | Metered quotas never reset | `check_quota` uses the monthly window | Done |
+| M1 | AI metering ran on a closed session in SSE generator | Fresh `async_session_factory()` inside the generator | Done |
+| M2 | Frontend refresh loop (403) + single-use-token race | Refresh only on 401; single-flight guard | Done |
+| M3 | Idempotency key collided across tenants | Key scoped to `X-Organization-ID` + token fingerprint | Done |
+| M4 | Rate limits shared behind proxy | `X-Forwarded-For`-aware key (trusted-proxy only) | Done |
+| L1 | Webhook non-2xx treated as permanent failure | Retry on HTTP errors with backoff | Done |
+| L2 | Active-plan cache not invalidated on webhook reconcile | `invalidate_active_plan` in payment job | Done |
+| L5 | OAuth/SAML logins had no refresh token | Sessions created + `&refresh=` in redirect; frontend stores both | Done |
+| L4 | Dunning daily repeat | Accepted (standard dunning cadence); notifications dedupe per run | Documented |
+
+Known residual caveats (acceptable for template): DNS-rebinding on webhook URLs
+(hostname→private-IP at delivery time), XFF spoofing if the proxy doesn't strip
+the header, idempotency fingerprint changes after token rotation.

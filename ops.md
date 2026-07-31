@@ -82,25 +82,21 @@ replication), then set the URL.
 The app already scopes every query by `organization_id`. RLS is an optional
 defense-in-depth layer at the database.
 
+Policies for `item`, `subscription`, `organizationmember`, and
+`organizationinvite` are applied by the `c9d1e3a5f7b2` migration and are
+**permissive when the tenant GUC is unset** (they also allow rows when the GUC
+is empty), so applying the migration is a safe no-op until you opt in.
+
 **Enable it:**
 
 1. Set `ENABLE_RLS=true` — the app then runs
    `set_config('app.current_org_id', ...)` and `set_config('app.is_admin', ...)`
    per request (tenant + admin flows).
-2. Apply the policies to the tenant tables:
-
-```sql
-ALTER TABLE item ENABLE ROW LEVEL SECURITY;
-ALTER TABLE subscription ENABLE ROW LEVEL SECURITY;
-ALTER TABLE organizationmember ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY tenant_isolation ON item
-  USING (
-    (SELECT current_setting('app.current_org_id', true)) = organization_id::text
-    OR (SELECT current_setting('app.is_admin', true)) = 'true'
-  );
--- repeat for subscription, organizationmember
-```
+2. Connect with a role that does not own the tables (or `FORCE ROW LEVEL
+   SECURITY` on each table), because Postgres bypasses RLS for table owners.
+3. Note that `set_config(..., true)` (`SET LOCAL`) applies to the current
+   transaction only; each request's first query runs in a fresh transaction, so
+   reads stay covered.
 
 > Because the app-level queries already filter by `organization_id`, RLS is a
 > second line of defense, not the primary isolation mechanism.
