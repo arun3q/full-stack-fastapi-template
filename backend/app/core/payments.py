@@ -1,8 +1,8 @@
 """Payment provider abstraction supporting Stripe and Razorpay.
 
-A single interface (``PaymentProvider``) lets the rest of the application stay
-provider-agnostic. Swap providers through the ``PAYMENT_PROVIDER`` setting
-(``stripe`` | ``razorpay`` | ``none``).
+Providers implement the ``CheckoutProvider`` interface; ``BillingPortalProvider``
+is an optional capability (Stripe). Swap providers through the
+``PAYMENT_PROVIDER`` setting (``stripe`` | ``razorpay`` | ``none``).
 
 Subscriptions belong to an **organization** (tenant). All external SDK calls are
 run in a worker thread so they never block the event loop.
@@ -120,7 +120,9 @@ async def _get_or_create_subscription(
     return subscription
 
 
-class PaymentProvider(ABC):
+class CheckoutProvider(ABC):
+    """Interface implemented by every subscription provider (Stripe, Razorpay)."""
+
     name: str
 
     @abstractmethod
@@ -140,12 +142,6 @@ class PaymentProvider(ABC):
         """Cancel a subscription with the provider."""
 
     @abstractmethod
-    async def create_billing_portal_session(
-        self, *, customer_id: str, return_url: str
-    ) -> str:
-        """Create a customer billing portal session and return its URL."""
-
-    @abstractmethod
     async def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:
         """Verify the authenticity of a webhook payload."""
 
@@ -156,7 +152,17 @@ class PaymentProvider(ABC):
         """Update local state for a provider webhook event. Returns a status."""
 
 
-class StripeProvider(PaymentProvider):
+class BillingPortalProvider(ABC):
+    """Optional capability: a hosted customer billing portal."""
+
+    @abstractmethod
+    async def create_billing_portal_session(
+        self, *, customer_id: str, return_url: str
+    ) -> str:
+        """Create a customer billing portal session and return its URL."""
+
+
+class StripeProvider(CheckoutProvider, BillingPortalProvider):
     name = "stripe"
 
     def __init__(self) -> None:
@@ -300,7 +306,7 @@ class StripeProvider(PaymentProvider):
         return "skipped"
 
 
-class RazorpayProvider(PaymentProvider):
+class RazorpayProvider(CheckoutProvider):
     name = "razorpay"
 
     def _client(self) -> Any:
@@ -352,12 +358,6 @@ class RazorpayProvider(PaymentProvider):
     async def cancel_subscription(self, *, provider_subscription_id: str) -> None:
         client = self._client()
         await asyncio.to_thread(client.subscription.cancel, provider_subscription_id, 0)
-
-    async def create_billing_portal_session(
-        self, *, customer_id: str, return_url: str
-    ) -> str:
-        # Razorpay does not offer a hosted billing portal.
-        raise PaymentError("Billing portal is not supported by Razorpay")
 
     async def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:
         """Razorpay signs webhooks with HMAC-SHA256 of the raw body."""
@@ -412,7 +412,7 @@ class RazorpayProvider(PaymentProvider):
         return "processed" if status else "skipped"
 
 
-def get_payment_provider() -> PaymentProvider | None:
+def get_payment_provider() -> CheckoutProvider | None:
     if settings.PAYMENT_PROVIDER == "stripe":
         return StripeProvider()
     if settings.PAYMENT_PROVIDER == "razorpay":

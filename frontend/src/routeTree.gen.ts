@@ -23,6 +23,7 @@ import { Route as MarketingTermsRouteImport } from './routes/_marketing/terms'
 import { Route as MarketingPrivacyRouteImport } from './routes/_marketing/privacy'
 import { Route as MarketingPricingRouteImport } from './routes/_marketing/pricing'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
+import { Route as LayoutOnboardingRouteImport } from './routes/_layout/onboarding'
 import { Route as LayoutMembersRouteImport } from './routes/_layout/members'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
@@ -98,6 +99,11 @@ const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutOnboardingRoute = LayoutOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutMembersRoute = LayoutMembersRouteImport.update({
   id: '/members',
   path: '/members',
@@ -143,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof LayoutDashboardRoute
   '/items': typeof LayoutItemsRoute
   '/members': typeof LayoutMembersRoute
+  '/onboarding': typeof LayoutOnboardingRoute
   '/settings': typeof LayoutSettingsRoute
   '/pricing': typeof MarketingPricingRoute
   '/privacy': typeof MarketingPrivacyRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof LayoutDashboardRoute
   '/items': typeof LayoutItemsRoute
   '/members': typeof LayoutMembersRoute
+  '/onboarding': typeof LayoutOnboardingRoute
   '/settings': typeof LayoutSettingsRoute
   '/pricing': typeof MarketingPricingRoute
   '/privacy': typeof MarketingPrivacyRoute
@@ -185,6 +193,7 @@ export interface FileRoutesById {
   '/_layout/dashboard': typeof LayoutDashboardRoute
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/members': typeof LayoutMembersRoute
+  '/_layout/onboarding': typeof LayoutOnboardingRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_marketing/pricing': typeof MarketingPricingRoute
   '/_marketing/privacy': typeof MarketingPrivacyRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/items'
     | '/members'
+    | '/onboarding'
     | '/settings'
     | '/pricing'
     | '/privacy'
@@ -228,6 +238,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/items'
     | '/members'
+    | '/onboarding'
     | '/settings'
     | '/pricing'
     | '/privacy'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/_layout/dashboard'
     | '/_layout/items'
     | '/_layout/members'
+    | '/_layout/onboarding'
     | '/_layout/settings'
     | '/_marketing/pricing'
     | '/_marketing/privacy'
@@ -369,6 +381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/onboarding': {
+      id: '/_layout/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof LayoutOnboardingRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/members': {
       id: '/_layout/members'
       path: '/members'
@@ -421,6 +440,7 @@ interface LayoutRouteChildren {
   LayoutDashboardRoute: typeof LayoutDashboardRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutMembersRoute: typeof LayoutMembersRoute
+  LayoutOnboardingRoute: typeof LayoutOnboardingRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
 }
 
@@ -431,6 +451,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutDashboardRoute: LayoutDashboardRoute,
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutMembersRoute: LayoutMembersRoute,
+  LayoutOnboardingRoute: LayoutOnboardingRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
 }
 

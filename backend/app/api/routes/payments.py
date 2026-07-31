@@ -8,7 +8,11 @@ from app.api.deps import CurrentOrg, CurrentUser, SessionDep
 from app.core.cache import cached
 from app.core.config import settings
 from app.core.jobs import enqueue_job
-from app.core.payments import PaymentError, get_payment_provider
+from app.core.payments import (
+    BillingPortalProvider,
+    PaymentError,
+    get_payment_provider,
+)
 from app.models import (
     Message,
     Plan,
@@ -160,10 +164,14 @@ async def cancel_subscription(session: SessionDep, current_org: CurrentOrg) -> A
 
 @router.post("/portal", response_model=dict[str, str])
 async def billing_portal(session: SessionDep, current_org: CurrentOrg) -> Any:
-    """Create a billing portal session (Stripe only) and return its URL."""
+    """Create a billing portal session and return its URL (providers that support it)."""
     provider = get_payment_provider()
     if provider is None:
         raise HTTPException(status_code=503, detail="No payment provider configured")
+    if not isinstance(provider, BillingPortalProvider):
+        raise HTTPException(
+            status_code=400, detail="Billing portal is not supported by this provider"
+        )
     subscription = (
         await session.exec(
             select(Subscription).where(Subscription.organization_id == current_org.id)

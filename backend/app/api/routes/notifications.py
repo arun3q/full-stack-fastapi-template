@@ -1,9 +1,14 @@
 from typing import Any
 
-from fastapi import APIRouter
-from sqlmodel import col, func, select
+from fastapi import APIRouter, HTTPException
 
 from app.api.deps import CurrentUser, SessionDep
+from app.crud.notifications import (
+    count_unread,
+    list_notifications,
+    mark_all_read,
+    mark_read,
+)
 from app.models import Notification, NotificationPublic, NotificationsPublic
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -11,14 +16,7 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 @router.get("/", response_model=NotificationsPublic)
 async def read_notifications(session: SessionDep, current_user: CurrentUser) -> Any:
-    notifications = (
-        await session.exec(
-            select(Notification)
-            .where(Notification.user_id == current_user.id)
-            .order_by(col(Notification.created_at).desc())
-            .limit(50)
-        )
-    ).all()
+    notifications = await list_notifications(session, current_user.id)
     return {
         "data": [NotificationPublic.model_validate(n) for n in notifications],
         "count": len(notifications),
@@ -27,52 +25,29 @@ async def read_notifications(session: SessionDep, current_user: CurrentUser) -> 
 
 @router.get("/unread-count", response_model=dict[str, int])
 async def unread_count(session: SessionDep, current_user: CurrentUser) -> Any:
-    count = (
-        await session.exec(
-            select(func.count())
-            .select_from(Notification)
-            .where(
-                Notification.user_id == current_user.id,
-                col(Notification.read_at).is_(None),
-            )
-        )
-    ).one()
-    return {"count": int(count)}
+    return {"count": await count_unread(session, current_user.id)}
 
 
 @router.post("/{notification_id}/read", response_model=NotificationPublic)
-async def mark_read(
+async def mark_read_route(
     session: SessionDep, current_user: CurrentUser, notification_id: Any
 ) -> Any:
-    from datetime import UTC, datetime
+    from uuid import UUID
 
-    from fastapi import HTTPException
-
-    notification = await session.get(Notification, notification_id)
+    try:
+        notification_uuid = UUID(str(notification_id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notification = await session.get(Notification, notification_uuid)
     if notification is None or notification.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Notification not found")
-    if notification.read_at is None:
-        notification.read_at = datetime.now(UTC)
-        session.add(notification)
-        await session.commit()
+    await mark_read(session, notification)
+    await session.commit()
     return notification
 
 
 @router.post("/read-all", response_model=dict[str, int])
-async def mark_all_read(session: SessionDep, current_user: CurrentUser) -> Any:
-    from datetime import UTC, datetime
-
-    notifications = (
-        await session.exec(
-            select(Notification).where(
-                Notification.user_id == current_user.id,
-                col(Notification.read_at).is_(None),
-            )
-        )
-    ).all()
-    now = datetime.now(UTC)
-    for notification in notifications:
-        notification.read_at = now
-        session.add(notification)
+async def mark_all_read_route(session: SessionDep, current_user: CurrentUser) -> Any:
+    count = await mark_all_read(session, current_user.id)
     await session.commit()
-    return {"count": len(notifications)}
+    return {"count": count}

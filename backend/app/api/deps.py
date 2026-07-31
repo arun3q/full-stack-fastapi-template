@@ -13,12 +13,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import security
 from app.core.access import billing_enabled, get_active_plan, is_admin, is_staff
 from app.core.config import settings
-from app.core.db import async_session_factory
-from app.core.orgs import (
-    ensure_personal_organization,
-    find_membership,
-    has_permission,
-)
+from app.core.db import async_session_factory, set_tenant_context
+from app.core.orgs import has_permission
+from app.crud.organizations import find_membership
+from app.crud.users import ensure_personal_organization
 from app.models import (
     Organization,
     OrganizationMember,
@@ -123,21 +121,35 @@ async def get_current_organization(
     if membership is None:
         created_org = await ensure_personal_organization(session, current_user)
         await session.commit()
+        await set_tenant_context(
+            session,
+            organization_id=created_org.id,
+            is_admin=is_staff(current_user),
+        )
         return created_org
     active_org = await session.get(Organization, membership.organization_id)
     if active_org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
+    await set_tenant_context(
+        session,
+        organization_id=active_org.id,
+        is_admin=is_staff(current_user),
+    )
     return active_org
 
 
 CurrentOrg = Annotated[Organization, Depends(get_current_organization)]
 
 
-async def get_current_active_superuser(current_user: CurrentUser) -> User:
+async def get_current_active_superuser(
+    session: SessionDep, current_user: CurrentUser
+) -> User:
     if not is_admin(current_user):
         raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges"
         )
+    # Under RLS, admins bypass tenant policies on cross-tenant reads
+    await set_tenant_context(session, organization_id=None, is_admin=True)
     return current_user
 
 

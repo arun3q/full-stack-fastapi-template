@@ -1,5 +1,7 @@
 from collections.abc import AsyncGenerator
+from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import create_engine, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -41,6 +43,26 @@ async def get_async_session() -> AsyncGenerator[AsyncSession]:
     """Dependency that yields an async DB session for the duration of a request."""
     async with async_session_factory() as session:
         yield session
+
+
+async def set_tenant_context(
+    session: AsyncSession, *, organization_id: Any, is_admin: bool
+) -> None:
+    """Set the Postgres RLS GUCs for the current request transaction.
+
+    Only used when ``ENABLE_RLS`` is on (see ``ops.md`` for the policies).
+    """
+    if not settings.ENABLE_RLS:
+        return
+    connection = await session.connection()
+    await connection.execute(
+        text("SELECT set_config('app.current_org_id', :org, true)"),
+        {"org": str(organization_id) if organization_id is not None else ""},
+    )
+    await connection.execute(
+        text("SELECT set_config('app.is_admin', :admin, true)"),
+        {"admin": "true" if is_admin else "false"},
+    )
 
 
 async def init_db(session: AsyncSession) -> None:

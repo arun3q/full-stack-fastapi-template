@@ -102,7 +102,7 @@ Goal: production-grade platform engineering — security, observability, integra
 - [x] Session management (list/revoke sessions)
 - [x] Audit log (`auditlog` table) — wired into login, TOTP, admin user, org, file actions
 - [x] Structured JSON logging (`LOG_FORMAT=json`) + `X-Request-ID` correlation
-- [ ] OpenTelemetry tracing (optional toggle) — deferred; Sentry covers errors today
+- [x] OpenTelemetry tracing (optional `ENABLE_OTEL` toggle — request spans)
 - [x] Permission registry → granular `require_org_permission("org:update")` matrix
 - [x] Idempotency keys on POST/PUT/PATCH (`Idempotency-Key` middleware, Redis)
 - [x] Outbound webhooks (signed, retries + backoff, delivery log, test dispatch)
@@ -113,23 +113,33 @@ Goal: production-grade platform engineering — security, observability, integra
 - [x] S3/MinIO-backed file uploads (`/files/upload`)
 - [x] httpOnly session-cookie auth option (`AUTH_TOKEN_IN_COOKIE`)
 - [x] Login security: failed-login lockout (Redis) + TOTP 2FA
-- [x] Admin console API: overview, organizations, users status, audit log
-  - [ ] Admin console frontend page (tab with orgs/overview) — pending
+- [x] Admin console: API (overview/orgs/users/audit) + frontend tabs (Overview/Users/Organizations)
 
 ## Phase 3 — Scale & compliance
 
 Goal: hard multi-tenant isolation, enterprise identity, growth UX.
 
-- [ ] Postgres Row-Level Security (RLS) — documented in `ops.md` as opt-in; not wired
+- [~] Postgres Row-Level Security (RLS) — opt-in `ENABLE_RLS` GUC hook wired
+      (tenant + admin flags per request); policies documented in `ops.md`
 - [ ] Read replicas + PgBouncer — documented in `ops.md` (config + runbook)
 - [~] Keyset pagination across all list endpoints — helper + items done; other lists pending
 - [x] Prometheus metrics (`/metrics` + request counters/histograms)
 - [ ] SSO (SAML/OIDC) + SCIM — documented in `ops.md` (Authlib OIDC ready; SAML/SCIM pending)
-- [~] Per-tenant branding — `Organization.branding` field + API; frontend accent wiring pending
+- [x] Per-tenant branding — `Organization.branding` + API + frontend accent wiring
 - [x] Notifications center (backend + notification bell UI + unread count)
 - [ ] i18n framework — documented in `ops.md` (scaffold guide)
-- [ ] Onboarding wizard (create org → invite → subscribe) — pending
+- [x] Onboarding wizard (create org → invite → subscribe)
 - [x] Backup/PITR + restore runbook; deploy/rollback notes (`ops.md`)
+
+---
+
+## Architecture cleanup (SOLID) — done
+
+- [x] Split `PaymentProvider` into `CheckoutProvider` + optional `BillingPortalProvider` (ISP)
+- [x] Split `core/jobs.py` into `core/jobs/` package (emails, payments, webhooks, maintenance)
+- [x] Split `core/middleware.py` into `core/middleware/` package
+- [x] Repository layer: `app/crud/` package; routes refactored to thin orchestration
+- [x] Frontend folds `featureApi.ts` onto the regenerated OpenAPI client (single transport)
 
 ---
 

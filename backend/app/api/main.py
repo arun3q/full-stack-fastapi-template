@@ -8,7 +8,6 @@ from app.api.routes import (
     files,
     items,
     login,
-    metrics,
     notifications,
     organizations,
     payments,
@@ -40,7 +39,6 @@ api_router.include_router(api_keys.router)
 api_router.include_router(notifications.router)
 api_router.include_router(files.router)
 api_router.include_router(admin.router)
-api_router.include_router(metrics.router)
 
 
 if settings.ENVIRONMENT == "local":

@@ -1,11 +1,20 @@
-import uuid
+"""User repository: persistence for user accounts and auth."""
 
-from sqlmodel import select
+import uuid
+from collections.abc import Sequence
+
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.orgs import ensure_personal_organization
 from app.core.security import get_password_hash, verify_password
-from app.models import Item, ItemCreate, User, UserCreate, UserUpdate
+from app.models import (
+    ORG_ROLE_OWNER,
+    Organization,
+    OrganizationMember,
+    User,
+    UserCreate,
+    UserUpdate,
+)
 
 
 async def create_user(*, session: AsyncSession, user_create: UserCreate) -> User:
@@ -46,6 +55,19 @@ async def get_user_by_email(*, session: AsyncSession, email: str) -> User | None
     return result.first()
 
 
+async def get_user_by_id(*, session: AsyncSession, user_id: uuid.UUID) -> User | None:
+    return await session.get(User, user_id)
+
+
+async def list_users(
+    *, session: AsyncSession, skip: int = 0, limit: int = 100
+) -> Sequence[User]:
+    statement = (
+        select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)
+    )
+    return (await session.exec(statement)).all()
+
+
 # Dummy hash to use for timing attack prevention when user is not found
 # This is an Argon2 hash of a random password, used to ensure constant-time comparison
 DUMMY_HASH = "$argon2id$v=19$m=65536,t=3,p=4$MjQyZWE1MzBjYjJlZTI0Yw$YTU4NGM5ZTZmYjE2NzZlZjY0ZWY3ZGRkY2U2OWFjNjk"
@@ -73,18 +95,37 @@ async def authenticate(
     return db_user
 
 
-async def create_item(
-    *,
-    session: AsyncSession,
-    item_in: ItemCreate,
-    owner_id: uuid.UUID,
-    organization_id: uuid.UUID | None = None,
-) -> Item:
-    db_item = Item.model_validate(
-        item_in,
-        update={"owner_id": owner_id, "organization_id": organization_id},
+async def ensure_personal_organization(
+    session: AsyncSession, user: User
+) -> Organization:
+    """Create a private organization for a user if they don't have one."""
+    existing = (
+        await session.exec(
+            select(OrganizationMember)
+            .where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.role == ORG_ROLE_OWNER,
+            )
+            .order_by(col(OrganizationMember.created_at))
+        )
+    ).first()
+    if existing:
+        org = await session.get(Organization, existing.organization_id)
+        if org is not None:
+            return org
+
+    org = Organization(
+        name=user.full_name or user.email or "My Workspace",
+        slug=f"personal-{uuid.uuid4().hex[:12]}",
     )
-    session.add(db_item)
-    await session.commit()
-    await session.refresh(db_item)
-    return db_item
+    session.add(org)
+    await session.flush()
+    session.add(
+        OrganizationMember(
+            organization_id=org.id,
+            user_id=user.id,
+            role=ORG_ROLE_OWNER,
+        )
+    )
+    await session.flush()
+    return org

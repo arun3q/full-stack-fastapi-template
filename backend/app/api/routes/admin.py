@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, select
 
 from app.api.deps import SessionDep, get_current_active_superuser
+from app.crud.audit import list_audit_logs
+from app.crud.users import get_user_by_id, list_users
 from app.models import (
-    AuditLog,
     AuditLogPublic,
     AuditLogsPublic,
     Item,
@@ -22,7 +23,7 @@ admin_only = [Depends(get_current_active_superuser)]
 
 
 @router.get("/overview", dependencies=admin_only)
-async def admin_overview(session: SessionDep) -> dict[str, Any]:
+async def admin_overview(session: SessionDep) -> dict[str, int]:
     """Platform-wide counters for the admin console."""
     counts: dict[str, int] = {}
     for label, model in [
@@ -81,11 +82,7 @@ async def admin_organizations(
 
 @router.get("/users", dependencies=admin_only, response_model=list[UserPublic])
 async def admin_users(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
-    users = (
-        await session.exec(
-            select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)
-        )
-    ).all()
+    users = await list_users(session=session, skip=skip, limit=limit)
     return [UserPublic.model_validate(u) for u in users]
 
 
@@ -100,7 +97,7 @@ async def admin_set_user_status(
         user_uuid = UUID(str(user_id))
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    user = await session.get(User, user_uuid)
+    user = await get_user_by_id(session=session, user_id=user_uuid)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = is_active
@@ -113,14 +110,7 @@ async def admin_set_user_status(
 @router.get("/audit-log", dependencies=admin_only, response_model=AuditLogsPublic)
 async def admin_audit_log(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
     """Recent platform audit-log entries."""
-    entries = (
-        await session.exec(
-            select(AuditLog)
-            .order_by(col(AuditLog.created_at).desc())
-            .offset(skip)
-            .limit(limit)
-        )
-    ).all()
+    entries = await list_audit_logs(session=session, skip=skip, limit=limit)
     return {
         "data": [AuditLogPublic.model_validate(e) for e in entries],
         "count": len(entries),

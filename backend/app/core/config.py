@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     # also read from that cookie (CSRF-safe session flow).
     AUTH_TOKEN_IN_COOKIE: bool = False
 
+    # Postgres Row-Level Security (defense-in-depth). When enabled the app sets
+    # the tenant GUC (app.current_org_id / app.is_admin) per request. Requires
+    # the RLS policies from ops.md to be applied to the tenant tables.
+    ENABLE_RLS: bool = False
+
+    # OpenTelemetry tracing (optional toggle)
+    ENABLE_OTEL: bool = False
+
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:
         if not self.EMAILS_FROM_NAME:

@@ -55,10 +55,7 @@ async def read_users(session: SessionDep, skip: int = 0, limit: int = 100) -> An
     count_statement = select(func.count()).select_from(User)
     count = (await session.exec(count_statement)).one()
 
-    statement = (
-        select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)
-    )
-    users = (await session.exec(statement)).all()
+    users = await crud.list_users(session=session, skip=skip, limit=limit)
 
     users_public = [UserPublic.model_validate(user) for user in users]
     return UsersPublic(data=users_public, count=count)

@@ -10,6 +10,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { isLoggedIn } from "@/hooks/useAuth"
+import { useOrgBranding } from "@/hooks/useOrgBranding"
 
 export const Route = createFileRoute("/_layout")({
   component: Layout,
@@ -23,6 +24,8 @@ export const Route = createFileRoute("/_layout")({
 })
 
 function Layout() {
+  useOrgBranding()
+
   return (
     <SidebarProvider>
       <AppSidebar />

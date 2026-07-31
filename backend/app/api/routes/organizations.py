@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlmodel import col, select
+from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.access import billing_enabled, get_active_plan, plan_quota
@@ -11,14 +11,22 @@ from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.jobs import send_email_background
 from app.core.notifications import notify
-from app.core.orgs import (
-    ORG_ROLE_MEMBER,
-    ORG_ROLE_OWNER,
+from app.core.orgs import ORG_ROLE_MEMBER, ORG_ROLE_OWNER, has_permission
+from app.crud.organizations import (
+    add_member,
     count_members,
-    create_organization_invite,
+    create_invite,
+    create_organization,
     find_membership,
-    has_permission,
-    slugify,
+    get_invite_by_token,
+    get_organization,
+    get_pending_invite,
+    list_invites,
+    list_members,
+    list_user_memberships,
+    remove_member,
+    update_member_role,
+    update_organization,
 )
 from app.models import (
     INVITE_ACCEPTED,
@@ -26,9 +34,7 @@ from app.models import (
     INVITE_PENDING,
     Message,
     MyOrganizationPublic,
-    Organization,
     OrganizationCreate,
-    OrganizationInvite,
     OrganizationInviteCreate,
     OrganizationInvitePublic,
     OrganizationInvitesPublic,
@@ -74,16 +80,10 @@ async def _require_permission(
 @router.get("/", response_model=dict[str, Any])
 async def read_my_organizations(session: SessionDep, current_user: CurrentUser) -> Any:
     """List the organizations the current user belongs to."""
-    memberships = (
-        await session.exec(
-            select(OrganizationMember)
-            .where(OrganizationMember.user_id == current_user.id)
-            .order_by(col(OrganizationMember.created_at).desc())
-        )
-    ).all()
+    memberships = await list_user_memberships(session, current_user.id)
     data: list[MyOrganizationPublic] = []
     for membership in memberships:
-        org = await session.get(Organization, membership.organization_id)
+        org = await get_organization(session, membership.organization_id)
         if org is None:
             continue
         data.append(
@@ -93,25 +93,11 @@ async def read_my_organizations(session: SessionDep, current_user: CurrentUser) 
 
 
 @router.post("/", response_model=OrganizationPublic)
-async def create_organization(
+async def create_organization_route(
     *, session: SessionDep, current_user: CurrentUser, body: OrganizationCreate
 ) -> Any:
     """Create a new organization; the creator becomes its owner."""
-    base_slug = slugify(body.name)
-    slug = base_slug
-    counter = 1
-    while (
-        await session.exec(select(Organization).where(Organization.slug == slug))
-    ).first():
-        slug = f"{base_slug}-{counter}"
-        counter += 1
-    org = Organization(name=body.name, slug=slug)
-    session.add(org)
-    await session.flush()
-    member = OrganizationMember(
-        organization_id=org.id, user_id=current_user.id, role=ORG_ROLE_OWNER
-    )
-    session.add(member)
+    org = await create_organization(session, name=body.name, user=current_user)
     await record_audit(
         session,
         action="org.create",
@@ -134,14 +120,14 @@ async def read_organization(
 ) -> Any:
     """Get organization details (members only)."""
     await _get_membership(session, current_user, organization_id)
-    org = await session.get(Organization, organization_id)
+    org = await get_organization(session, organization_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
     return org
 
 
 @router.patch("/{organization_id}", response_model=OrganizationPublic)
-async def update_organization(
+async def update_organization_route(
     *,
     session: SessionDep,
     current_user: CurrentUser,
@@ -150,12 +136,12 @@ async def update_organization(
 ) -> Any:
     """Update an organization (admin+)."""
     await _require_permission(session, current_user, organization_id, "org:update")
-    org = await session.get(Organization, organization_id)
+    org = await get_organization(session, organization_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
-    if body.name:
-        org.name = body.name
-    session.add(org)
+    if body.branding is not None:
+        org.branding = body.branding
+    org = await update_organization(session, org, name=body.name)
     await session.commit()
     await session.refresh(org)
     return org
@@ -169,13 +155,7 @@ async def read_members(
 ) -> Any:
     """List the members of an organization (members+)."""
     await _require_permission(session, current_user, organization_id, "org:view")
-    memberships = (
-        await session.exec(
-            select(OrganizationMember)
-            .where(OrganizationMember.organization_id == organization_id)
-            .order_by(col(OrganizationMember.created_at))
-        )
-    ).all()
+    memberships = await list_members(session, organization_id)
     data: list[OrganizationMemberPublic] = []
     for membership in memberships:
         user = await session.get(User, membership.user_id)
@@ -200,7 +180,7 @@ async def invite_member(
     """Invite a user by email (admin+). Respects the plan's seat quota."""
     await _require_permission(session, current_user, organization_id, "member:invite")
 
-    org = await session.get(Organization, organization_id)
+    org = await get_organization(session, organization_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
 
@@ -216,15 +196,9 @@ async def invite_member(
                 status_code=409, detail="User is already a member of this organization"
             )
 
-    pending = (
-        await session.exec(
-            select(OrganizationInvite).where(
-                OrganizationInvite.organization_id == organization_id,
-                OrganizationInvite.email == body.email,
-                OrganizationInvite.status == INVITE_PENDING,
-            )
-        )
-    ).first()
+    pending = await get_pending_invite(
+        session, organization_id=organization_id, email=str(body.email)
+    )
     if pending:
         raise HTTPException(status_code=409, detail="An invite is already pending")
 
@@ -246,9 +220,9 @@ async def invite_member(
                 ),
             )
 
-    invite = await create_organization_invite(
+    invite = await create_invite(
         session,
-        organization=org,
+        organization_id=org.id,
         email=str(body.email),
         role=body.role,
         invited_by=current_user,
@@ -286,13 +260,7 @@ async def read_invites(
 ) -> Any:
     """List pending invites for an organization (admin+)."""
     await _require_permission(session, current_user, organization_id, "member:invite")
-    invites = (
-        await session.exec(
-            select(OrganizationInvite)
-            .where(OrganizationInvite.organization_id == organization_id)
-            .order_by(col(OrganizationInvite.created_at).desc())
-        )
-    ).all()
+    invites = await list_invites(session, organization_id)
     return {
         "data": [OrganizationInvitePublic.model_validate(i) for i in invites],
         "count": len(invites),
@@ -304,11 +272,7 @@ async def accept_invite(
     session: SessionDep, current_user: CurrentUser, token: str
 ) -> Any:
     """Accept an invitation (must be logged in with the invited email)."""
-    invite = (
-        await session.exec(
-            select(OrganizationInvite).where(OrganizationInvite.token == token)
-        )
-    ).first()
+    invite = await get_invite_by_token(session, token)
     if invite is None:
         raise HTTPException(status_code=404, detail="Invite not found")
     if invite.status != INVITE_PENDING:
@@ -332,12 +296,12 @@ async def accept_invite(
             status_code=409, detail="Already a member of this organization"
         )
 
-    member = OrganizationMember(
+    await add_member(
+        session,
         organization_id=invite.organization_id,
         user_id=current_user.id,
         role=invite.role,
     )
-    session.add(member)
     invite.status = INVITE_ACCEPTED
     session.add(invite)
     # Notify whoever sent the invite
@@ -365,7 +329,7 @@ async def accept_invite(
     "/{organization_id}/members/{user_id}",
     response_model=OrganizationMemberPublic,
 )
-async def update_member_role(
+async def update_member_role_route(
     *,
     session: SessionDep,
     current_user: CurrentUser,
@@ -377,14 +341,9 @@ async def update_member_role(
     await _require_permission(session, current_user, organization_id, "member:manage")
     if role not in (ORG_ROLE_OWNER, "admin", ORG_ROLE_MEMBER, "viewer"):
         raise HTTPException(status_code=400, detail="Invalid role")
-    member = (
-        await session.exec(
-            select(OrganizationMember).where(
-                OrganizationMember.organization_id == organization_id,
-                OrganizationMember.user_id == user_id,
-            )
-        )
-    ).first()
+    member = await update_member_role(
+        session, organization_id=organization_id, user_id=user_id, role=role
+    )
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
 
@@ -394,8 +353,6 @@ async def update_member_role(
             session, current_user, organization_id, "member:remove"
         )
 
-    member.role = role
-    session.add(member)
     await session.commit()
     await session.refresh(member)
     user = await session.get(User, member.user_id)
@@ -406,7 +363,7 @@ async def update_member_role(
 
 
 @router.delete("/{organization_id}/members/{user_id}", response_model=Message)
-async def remove_member(
+async def remove_member_route(
     *,
     session: SessionDep,
     current_user: CurrentUser,
@@ -417,18 +374,12 @@ async def remove_member(
     await _require_permission(session, current_user, organization_id, "member:remove")
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot remove yourself")
-    member = (
-        await session.exec(
-            select(OrganizationMember).where(
-                OrganizationMember.organization_id == organization_id,
-                OrganizationMember.user_id == user_id,
-            )
-        )
-    ).first()
+    member = await remove_member(
+        session, organization_id=organization_id, user_id=user_id
+    )
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
     if member.role == ORG_ROLE_OWNER:
         raise HTTPException(status_code=403, detail="Cannot remove the owner")
-    await session.delete(member)
     await session.commit()
     return Message(message="Member removed")

@@ -1,7 +1,14 @@
-import { OpenAPI } from "@/client"
-
-const API_V1 = "/api/v1"
-const TOKEN_KEY = "access_token"
+import {
+  AdminService,
+  AiService,
+  AuthService,
+  NotificationsService,
+  OpenAPI,
+  OrganizationsService,
+  PaymentsService,
+  PublicService,
+  UsersService,
+} from "@/client"
 
 export type PlanPublic = {
   id: string
@@ -42,6 +49,7 @@ export type OrganizationPublic = {
   id: string
   name: string
   slug: string
+  branding: string | null
   created_at: string | null
 }
 
@@ -89,8 +97,7 @@ export type ChatMessageInput = {
   content: string
 }
 
-type ApiErrorBody = { detail?: string }
-
+const TOKEN_KEY = "access_token"
 const ORG_KEY = "active_org_id"
 
 export function getActiveOrgId(): string | null {
@@ -102,166 +109,128 @@ export function setActiveOrgId(id: string | null): void {
   else localStorage.removeItem(ORG_KEY)
 }
 
+/** The generated client sends the active tenant on every request. */
+export function configureOpenApi() {
+  OpenAPI.TOKEN = async () => localStorage.getItem(TOKEN_KEY) || ""
+  OpenAPI.HEADERS = async (): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = {}
+    const orgId = getActiveOrgId()
+    if (orgId) headers["X-Organization-ID"] = orgId
+    return headers
+  }
+}
+
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY)
   const headers: Record<string, string> = {}
+  const token = localStorage.getItem(TOKEN_KEY)
   if (token) headers.Authorization = `Bearer ${token}`
   const orgId = getActiveOrgId()
   if (orgId) headers["X-Organization-ID"] = orgId
   return headers
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${OpenAPI.BASE}${API_V1}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(),
-      ...(init.headers ?? {}),
-    },
-  })
-  if (!response.ok) {
-    const body = (await response
-      .json()
-      .catch(() => null)) as ApiErrorBody | null
-    if (response.status === 401 || response.status === 403) {
-      localStorage.removeItem(TOKEN_KEY)
-    }
-    throw new Error(
-      body?.detail ?? `Request failed with status ${response.status}`,
-    )
-  }
-  if (response.status === 204) {
-    return undefined as T
-  }
-  return (await response.json()) as T
-}
+type ListResponse<T> = { data: T[]; count: number }
 
 export const featureApi = {
-  authProviders: () =>
-    request<{ providers: string[] }>("/auth/providers", { method: "GET" }),
-
-  userAccess: () => request<UserAccess>("/users/me/access", { method: "GET" }),
-
-  plans: () =>
-    request<{ data: PlanPublic[]; count: number }>("/payments/plans", {
-      method: "GET",
-    }),
-
-  createCheckout: (planId: string) =>
-    request<{ id: string; url: string }>(
-      `/payments/checkout?plan_id=${encodeURIComponent(planId)}`,
-      { method: "POST" },
-    ),
-
-  subscription: () =>
-    request<SubscriptionPublic | null>("/payments/subscription", {
-      method: "GET",
-    }),
-
-  cancelSubscription: () =>
-    request<{ message: string }>("/payments/subscription/cancel", {
-      method: "POST",
-    }),
-
-  billingPortal: () =>
-    request<{ url: string }>("/payments/portal", { method: "POST" }),
-
-  aiHealth: () =>
-    request<{ provider: string | null; configured: boolean; model?: string }>(
-      "/ai/health",
-      { method: "GET" },
-    ),
-
-  publicConfig: () =>
-    request<PublicConfig>("/public/config", { method: "GET" }),
-
-  organizations: () =>
-    request<{ data: MyOrganizationPublic[]; count: number }>(
-      "/organizations/",
-      {
-        method: "GET",
-      },
-    ),
-
-  createOrganization: (name: string) =>
-    request<OrganizationPublic>("/organizations/", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-
-  updateOrganization: (orgId: string, name: string) =>
-    request<OrganizationPublic>(`/organizations/${orgId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name }),
-    }),
-
-  organizationMembers: (orgId: string) =>
-    request<{ data: OrganizationMemberPublic[]; count: number }>(
-      `/organizations/${orgId}/members`,
-      { method: "GET" },
-    ),
-
-  organizationInvites: (orgId: string) =>
-    request<{ data: OrganizationInvitePublic[]; count: number }>(
-      `/organizations/${orgId}/invites`,
-      { method: "GET" },
-    ),
-
-  inviteMember: (orgId: string, email: string, role = "member") =>
-    request<OrganizationInvitePublic>(`/organizations/${orgId}/members`, {
-      method: "POST",
-      body: JSON.stringify({ email, role }),
-    }),
-
-  acceptInvite: (token: string) =>
-    request<{ message: string }>(`/organizations/invites/${token}/accept`, {
-      method: "POST",
-    }),
-
-  changeMemberRole: (orgId: string, userId: string, role: string) =>
-    request<OrganizationMemberPublic>(
-      `/organizations/${orgId}/members/${userId}?role=${encodeURIComponent(role)}`,
-      { method: "PATCH" },
-    ),
-
-  removeMember: (orgId: string, userId: string) =>
-    request<{ message: string }>(`/organizations/${orgId}/members/${userId}`, {
-      method: "DELETE",
-    }),
-
-  verifyEmail: (token: string) =>
-    request<{ message: string }>("/users/verify-email", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
-
-  resendVerificationEmail: (email: string) =>
-    request<{ message: string }>("/users/verify-email/resend", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-
-  notifications: () =>
-    request<{ data: NotificationPublic[]; count: number }>("/notifications/", {
-      method: "GET",
-    }),
-
-  notificationUnreadCount: () =>
-    request<{ count: number }>("/notifications/unread-count", {
-      method: "GET",
-    }),
-
-  markNotificationRead: (id: string) =>
-    request<NotificationPublic>(`/notifications/${id}/read`, {
-      method: "POST",
-    }),
-
-  markAllNotificationsRead: () =>
-    request<{ count: number }>("/notifications/read-all", { method: "POST" }),
-
-  adminOverview: () =>
-    request<AdminOverview>("/admin/overview", { method: "GET" }),
+  authProviders: async () =>
+    (await AuthService.authProviders()) as unknown as { providers: string[] },
+  userAccess: async () =>
+    (await UsersService.readUserAccess()) as unknown as UserAccess,
+  plans: async () =>
+    (await PaymentsService.readPlans()) as unknown as ListResponse<PlanPublic>,
+  createCheckout: async (planId: string) =>
+    (await PaymentsService.createCheckout({ planId })) as unknown as {
+      id: string
+      url: string
+    },
+  subscription: async () =>
+    (await PaymentsService.readSubscription()) as unknown as SubscriptionPublic | null,
+  cancelSubscription: async () =>
+    (await PaymentsService.cancelSubscription()) as unknown as {
+      message: string
+    },
+  billingPortal: async () =>
+    (await PaymentsService.billingPortal()) as unknown as { url: string },
+  aiHealth: async () =>
+    (await AiService.aiHealth()) as unknown as {
+      provider: string | null
+      configured: boolean
+      model?: string
+    },
+  publicConfig: async () =>
+    (await PublicService.publicConfig()) as unknown as PublicConfig,
+  organizations: async () =>
+    (await OrganizationsService.readMyOrganizations()) as unknown as ListResponse<MyOrganizationPublic>,
+  createOrganization: async (name: string) =>
+    (await OrganizationsService.createOrganizationRoute({
+      requestBody: { name },
+    })) as unknown as OrganizationPublic,
+  updateOrganization: async (orgId: string, name: string) =>
+    (await OrganizationsService.updateOrganizationRoute({
+      organizationId: orgId,
+      requestBody: { name },
+    })) as unknown as OrganizationPublic,
+  organizationMembers: async (orgId: string) =>
+    (await OrganizationsService.readMembers({
+      organizationId: orgId,
+    })) as unknown as ListResponse<OrganizationMemberPublic>,
+  organizationInvites: async (orgId: string) =>
+    (await OrganizationsService.readInvites({
+      organizationId: orgId,
+    })) as unknown as ListResponse<OrganizationInvitePublic>,
+  inviteMember: async (orgId: string, email: string, role = "member") =>
+    (await OrganizationsService.inviteMember({
+      organizationId: orgId,
+      requestBody: { email, role },
+    })) as unknown as OrganizationInvitePublic,
+  acceptInvite: async (token: string) =>
+    (await OrganizationsService.acceptInvite({ token })) as unknown as {
+      message: string
+    },
+  changeMemberRole: async (orgId: string, userId: string, role: string) =>
+    (await OrganizationsService.updateMemberRoleRoute({
+      organizationId: orgId,
+      userId,
+      role,
+    })) as unknown as OrganizationMemberPublic,
+  removeMember: async (orgId: string, userId: string) =>
+    (await OrganizationsService.removeMemberRoute({
+      organizationId: orgId,
+      userId,
+    })) as unknown as { message: string },
+  verifyEmail: async (token: string) =>
+    (await UsersService.verifyEmail({
+      requestBody: { token },
+    })) as unknown as { message: string },
+  resendVerificationEmail: async (email: string) =>
+    (await UsersService.resendVerificationEmail({
+      requestBody: { email },
+    })) as unknown as { message: string },
+  notifications: async () =>
+    (await NotificationsService.readNotifications()) as unknown as ListResponse<NotificationPublic>,
+  notificationUnreadCount: async () =>
+    (await NotificationsService.unreadCount()) as unknown as { count: number },
+  markNotificationRead: async (id: string) =>
+    (await NotificationsService.markReadRoute({
+      notificationId: id,
+    })) as unknown as NotificationPublic,
+  markAllNotificationsRead: async () =>
+    (await NotificationsService.markAllReadRoute()) as unknown as {
+      count: number
+    },
+  adminOverview: async () =>
+    (await AdminService.adminOverview()) as unknown as AdminOverview,
+  adminOrganizations: async () =>
+    (await AdminService.adminOrganizations()) as unknown as {
+      data: {
+        id: string
+        name: string
+        slug: string
+        member_count: number
+        created_at: string | null
+      }[]
+      count: number
+    },
 }
 
 export type StreamChatOptions = {
@@ -272,8 +241,10 @@ export type StreamChatOptions = {
   onDone?: () => void
 }
 
+type ApiErrorBody = { detail?: string }
+
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const response = await fetch(`${OpenAPI.BASE}${API_V1}/ai/chat`, {
+  const response = await fetch(`${OpenAPI.BASE}/api/v1/ai/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

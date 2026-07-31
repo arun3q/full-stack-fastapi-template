@@ -2,7 +2,6 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import col, func, select
 
 from app.api.deps import (
     CurrentOrg,
@@ -17,8 +16,9 @@ from app.core.access import (
     is_staff,
     plan_quota,
 )
-from app.core.pagination import decode_cursor, encode_cursor
-from app.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
+from app.crud.items import count_items, get_item, list_items
+from app.crud.items import create_item as create_item_crud
+from app.models import ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -36,48 +36,27 @@ async def read_items(
 ) -> Any:
     """
     Retrieve items. Staff+ see every item; everyone else sees their
-    organization's items. Supports keyset pagination via ``cursor``
-    (the ``next_cursor`` returned by the previous page).
+    organization's items. Supports keyset pagination via ``cursor``.
     """
-    if is_staff(current_user):
-        count_statement = select(func.count()).select_from(Item)
-        count = (await session.exec(count_statement)).one()
-        statement = (
-            select(Item).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)
-        )
-        items = (await session.exec(statement)).all()
-    else:
-        count_statement = (
-            select(func.count())
-            .select_from(Item)
-            .where(Item.organization_id == current_org.id)
-        )
-        count = (await session.exec(count_statement)).one()
-        statement = (
-            select(Item)
-            .where(Item.organization_id == current_org.id)
-            .order_by(col(Item.created_at).desc())
-            .limit(limit)
-        )
-        if cursor:
-            keyset = decode_cursor(cursor)
-            if keyset is None:
-                raise HTTPException(status_code=400, detail="Invalid cursor")
-            cursor_created_at, cursor_id = keyset
-            statement = statement.where(
-                (col(Item.created_at) < cursor_created_at)
-                | ((col(Item.created_at) == cursor_created_at) & (Item.id < cursor_id))
+    try:
+        if is_staff(current_user):
+            count = await count_items(session)
+            items, next_cursor = await list_items(
+                session=session, skip=skip, limit=limit
             )
         else:
-            statement = statement.offset(skip)
-        items = (await session.exec(statement)).all()
+            count = await count_items(session, current_org.id)
+            items, next_cursor = await list_items(
+                session=session,
+                organization_id=current_org.id,
+                skip=skip,
+                limit=limit,
+                cursor=cursor,
+            )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid cursor")
 
     items_public = [ItemPublic.model_validate(item) for item in items]
-    next_cursor = (
-        encode_cursor(items[-1].created_at, items[-1].id)
-        if items and len(items) == limit
-        else None
-    )
     return ItemsPublic(data=items_public, count=count, next_cursor=next_cursor)
 
 
@@ -87,15 +66,9 @@ async def read_items(
     response_model=ItemsPublic,
 )
 async def read_all_items(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
-    """
-    List every item in the system (staff or above only).
-    """
-    count_statement = select(func.count()).select_from(Item)
-    count = (await session.exec(count_statement)).one()
-    statement = (
-        select(Item).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)
-    )
-    items = (await session.exec(statement)).all()
+    """List every item in the system (staff or above only)."""
+    count = await count_items(session)
+    items, _ = await list_items(session=session, skip=skip, limit=limit)
     items_public = [ItemPublic.model_validate(item) for item in items]
     return ItemsPublic(data=items_public, count=count)
 
@@ -110,7 +83,7 @@ async def read_item(
     """
     Get item by ID.
     """
-    item = await session.get(Item, id)
+    item = await get_item(session, id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     if not is_staff(current_user) and item.organization_id != current_org.id:
@@ -142,12 +115,7 @@ async def create_item(
             else plan_quota(plan, "max_items", default=0)
         )
         if max_items > 0:
-            count_statement = (
-                select(func.count())
-                .select_from(Item)
-                .where(Item.organization_id == current_org.id)
-            )
-            count = (await session.exec(count_statement)).one()
+            count = await count_items(session, current_org.id)
             if count >= max_items:
                 raise HTTPException(
                     status_code=403,
@@ -157,16 +125,12 @@ async def create_item(
                     ),
                 )
 
-    item = Item.model_validate(
-        item_in,
-        update={
-            "owner_id": current_user.id,
-            "organization_id": current_org.id,
-        },
+    item = await create_item_crud(
+        session=session,
+        item_in=item_in,
+        owner_id=current_user.id,
+        organization_id=current_org.id,
     )
-    session.add(item)
-    await session.commit()
-    await session.refresh(item)
     return item
 
 
@@ -186,7 +150,7 @@ async def update_item(
     """
     Update an item.
     """
-    item = await session.get(Item, id)
+    item = await get_item(session, id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     if not is_staff(current_user) and item.organization_id != current_org.id:
@@ -212,7 +176,7 @@ async def delete_item(
     """
     Delete an item.
     """
-    item = await session.get(Item, id)
+    item = await get_item(session, id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     if not is_staff(current_user) and item.organization_id != current_org.id:

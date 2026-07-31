@@ -1,12 +1,19 @@
-import json
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlmodel import col, select
 
 from app.api.deps import CurrentOrg, SessionDep
-from app.core.api_keys import generate_api_key, parse_scopes
+from app.core.api_keys import parse_scopes
+from app.crud.api_keys import (
+    create_api_key as create_key,
+)
+from app.crud.api_keys import (
+    find_by_key,
+    get_api_key,
+    list_api_keys,
+    revoke_api_key,
+)
 from app.models import (
     ApiKey,
     ApiKeyCreate,
@@ -23,16 +30,7 @@ router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 @router.get("/", response_model=ApiKeysPublic)
 async def read_api_keys(session: SessionDep, current_org: CurrentOrg) -> Any:
     """List the active organization's API keys."""
-    keys = (
-        await session.exec(
-            select(ApiKey)
-            .where(
-                ApiKey.organization_id == current_org.id,
-                col(ApiKey.revoked_at).is_(None),
-            )
-            .order_by(col(ApiKey.created_at).desc())
-        )
-    ).all()
+    keys = await list_api_keys(session, current_org.id)
     return {
         "data": [_to_public(k) for k in keys],
         "count": len(keys),
@@ -40,18 +38,16 @@ async def read_api_keys(session: SessionDep, current_org: CurrentOrg) -> Any:
 
 
 @router.post("/", response_model=ApiKeyCreated)
-async def create_api_key(
+async def create_api_key_route(
     *, session: SessionDep, current_org: CurrentOrg, body: ApiKeyCreate
 ) -> Any:
     """Create an API key. The plaintext key is only shown once."""
-    plaintext, key_hash = generate_api_key()
-    api_key = ApiKey(
+    api_key, plaintext = await create_key(
+        session,
         organization_id=current_org.id,
         name=body.name,
-        key_hash=key_hash,
-        scopes=json.dumps(body.scopes or ["read"]),
+        scopes=body.scopes,
     )
-    session.add(api_key)
     await session.commit()
     await session.refresh(api_key)
     public = _to_public(api_key)
@@ -59,7 +55,7 @@ async def create_api_key(
 
 
 @router.delete("/{key_id}", response_model=Message)
-async def revoke_api_key(
+async def revoke_api_key_route(
     session: SessionDep, current_org: CurrentOrg, key_id: Any
 ) -> Message:
     """Revoke an API key."""
@@ -69,13 +65,11 @@ async def revoke_api_key(
         key_uuid = UUID(str(key_id))
     except ValueError:
         raise HTTPException(status_code=404, detail="API key not found")
-    api_key = await session.get(ApiKey, key_uuid)
+    api_key = await get_api_key(session, key_uuid)
     if api_key is None or api_key.organization_id != current_org.id:
         raise HTTPException(status_code=404, detail="API key not found")
-    if api_key.revoked_at is None:
-        api_key.revoked_at = datetime.now(UTC)
-        session.add(api_key)
-        await session.commit()
+    await revoke_api_key(session, api_key)
+    await session.commit()
     return Message(message="API key revoked")
 
 
@@ -97,9 +91,7 @@ async def authenticate_api_key(
     """Authenticate a request via ``X-API-Key``."""
     if not x_api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    from app.core.api_keys import find_api_key
-
-    api_key = await find_api_key(session, x_api_key)
+    api_key = await find_by_key(session, x_api_key)
     if api_key is None:
         raise HTTPException(status_code=401, detail="Invalid API key")
     api_key.last_used_at = datetime.now(UTC)
@@ -111,7 +103,7 @@ async def authenticate_api_key(
 ApiKeyDep = Annotated[ApiKey, Depends(authenticate_api_key)]
 
 
-@router.get("/me", tags=["api"])
+@router.get("/me")
 async def read_api_key_me(session: SessionDep, api_key: ApiKeyDep) -> dict[str, Any]:
     """Demo endpoint authenticated via X-API-Key (returns key + org info)."""
     org = await session.get(Organization, api_key.organization_id)

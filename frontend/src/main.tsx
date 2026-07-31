@@ -10,13 +10,12 @@ import ReactDOM from "react-dom/client"
 import { ApiError, OpenAPI } from "./client"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
+import { configureOpenApi } from "./lib/featureApi"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
 
 OpenAPI.BASE = import.meta.env.VITE_API_URL ?? ""
-OpenAPI.TOKEN = async () => {
-  return localStorage.getItem("access_token") || ""
-}
+configureOpenApi()
 
 const handleApiError = (error: Error) => {
   if (error instanceof ApiError && [401, 403].includes(error.status)) {

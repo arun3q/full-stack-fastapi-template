@@ -2,16 +2,23 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core import security
 from app.core.audit import audit_event
 from app.core.config import settings
+from app.crud.sessions import (
+    create_session as create_session_record,
+)
+from app.crud.sessions import (
+    get_session,
+    get_session_by_refresh_hash,
+    list_active_sessions,
+    revoke_session,
+)
 from app.models import (
     Message,
     RefreshRequest,
-    Session,
     SessionPublic,
     SessionsPublic,
     Token,
@@ -25,34 +32,21 @@ async def refresh_access_token(
     request: Request, session: SessionDep, body: RefreshRequest
 ) -> Token:
     """Rotate a refresh token: revoke it and issue a fresh access + refresh pair."""
-    hashed = security.hash_refresh_token(body.refresh_token)
-    db_session = (
-        await session.exec(
-            select(Session).where(
-                Session.refresh_token_hash == hashed,
-                col(Session.revoked_at).is_(None),
-            )
-        )
-    ).first()
-    if db_session is None:
+    db_session = await get_session_by_refresh_hash(session, body.refresh_token)
+    if db_session is None or db_session.revoked_at is not None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     if db_session.expires_at is not None and db_session.expires_at < datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
     # Rotate
-    db_session.revoked_at = datetime.now(UTC)
-    session.add(db_session)
+    await revoke_session(session, db_session)
 
-    new_refresh = security.generate_refresh_token()
-    new_session = Session(
+    new_refresh, new_session = await create_session_record(
+        session,
         user_id=db_session.user_id,
-        refresh_token_hash=security.hash_refresh_token(new_refresh),
         ip_address=db_session.ip_address,
         user_agent=db_session.user_agent,
-        expires_at=datetime.now(UTC)
-        + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )
-    session.add(new_session)
     await session.commit()
 
     await audit_event(
@@ -76,13 +70,9 @@ async def logout(
     request: Request, session: SessionDep, body: RefreshRequest
 ) -> Message:
     """Revoke the session associated with a refresh token."""
-    hashed = security.hash_refresh_token(body.refresh_token)
-    db_session = (
-        await session.exec(select(Session).where(Session.refresh_token_hash == hashed))
-    ).first()
+    db_session = await get_session_by_refresh_hash(session, body.refresh_token)
     if db_session is not None and db_session.revoked_at is None:
-        db_session.revoked_at = datetime.now(UTC)
-        session.add(db_session)
+        await revoke_session(session, db_session)
         await session.commit()
         await audit_event(
             action="auth.logout",
@@ -95,16 +85,7 @@ async def logout(
 @router.get("/sessions", response_model=SessionsPublic)
 async def read_sessions(session: SessionDep, current_user: CurrentUser) -> Any:
     """List the current user's active sessions."""
-    sessions = (
-        await session.exec(
-            select(Session)
-            .where(
-                Session.user_id == current_user.id,
-                col(Session.revoked_at).is_(None),
-            )
-            .order_by(col(Session.last_used_at).desc())
-        )
-    ).all()
+    sessions = await list_active_sessions(session, current_user.id)
     return {
         "data": [SessionPublic.model_validate(s) for s in sessions],
         "count": len(sessions),
@@ -112,7 +93,7 @@ async def read_sessions(session: SessionDep, current_user: CurrentUser) -> Any:
 
 
 @router.delete("/sessions/{session_id}", response_model=Message)
-async def revoke_session(
+async def revoke_session_route(
     session: SessionDep,
     current_user: CurrentUser,
     session_id: Any,
@@ -124,11 +105,10 @@ async def revoke_session(
         session_uuid = UUID(str(session_id))
     except ValueError:
         raise HTTPException(status_code=404, detail="Session not found")
-    db_session = await session.get(Session, session_uuid)
+    db_session = await get_session(session, session_uuid)
     if db_session is None or db_session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
     if db_session.revoked_at is None:
-        db_session.revoked_at = datetime.now(UTC)
-        session.add(db_session)
+        await revoke_session(session, db_session)
         await session.commit()
     return Message(message="Session revoked")

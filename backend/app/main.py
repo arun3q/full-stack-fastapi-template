@@ -35,8 +35,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # the app keeps working and jobs fall back to running inline.
     from app.core import jobs
     from app.core.middleware import init_metrics
+    from app.core.telemetry import init_telemetry
 
     init_metrics()
+    init_telemetry()
     try:
         pool = await jobs.create_redis_pool()
         jobs.set_redis_pool(pool)
