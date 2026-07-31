@@ -118,21 +118,31 @@ async def subscription_dunning_job(_ctx: dict[str, Any]) -> None:
 
 
 async def requeue_stale_webhook_deliveries_job(_ctx: dict[str, Any]) -> None:
-    """Re-queue pending webhook deliveries whose retry window has passed."""
+    """Re-queue pending webhook deliveries whose retry window has passed.
+
+    Only targets deliveries that were already attempted (``attempts > 0``) and
+    have a scheduled ``next_retry_at`` in the past. Brand-new deliveries are
+    excluded (they were already enqueued by ``dispatch_webhooks``), which avoids
+    duplicate POSTs to customer endpoints.
+    """
     async with async_session_factory() as session:
         now = datetime.now(UTC)
         stale = (
             await session.exec(
                 select(WebhookDelivery).where(
                     WebhookDelivery.status == "pending",
-                    col(WebhookDelivery.next_retry_at).is_(None)
-                    | (col(WebhookDelivery.next_retry_at) < now),
+                    WebhookDelivery.attempts > 0,
                     WebhookDelivery.attempts < MAX_WEBHOOK_ATTEMPTS,
+                    col(WebhookDelivery.next_retry_at).is_not(None),
+                    col(WebhookDelivery.next_retry_at) < now,
                 )
             )
         ).all()
         requeued = 0
         for delivery in stale:
+            # Bump the retry time so a queued job isn't re-picked on the next tick
+            delivery.next_retry_at = now + timedelta(minutes=5)
+            session.add(delivery)
             await enqueue_job(
                 "deliver_webhook_job",
                 delivery_id=str(delivery.id),

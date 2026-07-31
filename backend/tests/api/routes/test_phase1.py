@@ -106,7 +106,7 @@ async def test_viewer_cannot_create_api_key(
 
 
 async def test_dunning_job_notifies_past_due_owner(
-    _client: TestClient, db: AsyncSession
+    db: AsyncSession
 ) -> None:
     email, password = await _create_user(db)
     user = (await db.exec(select(User).where(User.email == email))).first()
@@ -151,7 +151,7 @@ async def test_dunning_job_notifies_past_due_owner(
 
 
 async def test_requeue_stale_webhook_deliveries(
-    _client: TestClient, db: AsyncSession
+    db: AsyncSession
 ) -> None:
     email, password = await _create_user(db)
     user = (await db.exec(select(User).where(User.email == email))).first()
