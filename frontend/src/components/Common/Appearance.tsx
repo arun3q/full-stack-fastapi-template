@@ -1,11 +1,18 @@
 import { Monitor, Moon, Sun } from "lucide-react"
 
-import { type Theme, useTheme } from "@/components/theme-provider"
+import {
+  ACCENTS,
+  type Accent,
+  type Theme,
+  useTheme,
+} from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -14,12 +21,49 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
+const ACCENT_SWATCHES: Record<Accent, string> = {
+  default: "bg-primary",
+  teal: "bg-teal-500",
+  rose: "bg-rose-500",
+  amber: "bg-amber-500",
+  violet: "bg-violet-500",
+}
+
 type LucideIcon = React.FC<React.SVGProps<SVGSVGElement>>
 
 const ICON_MAP: Record<Theme, LucideIcon> = {
   system: Monitor,
   light: Sun,
   dark: Moon,
+}
+
+function AccentPicker() {
+  const { accent, setAccent } = useTheme()
+
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel className="text-xs text-muted-foreground">
+        Accent
+      </DropdownMenuLabel>
+      <div className="flex gap-1.5 px-2 py-1.5">
+        {ACCENTS.map((candidate) => (
+          <button
+            key={candidate}
+            type="button"
+            data-testid={`accent-${candidate}`}
+            onClick={() => setAccent(candidate)}
+            aria-label={`Accent ${candidate}`}
+            className={`size-5 rounded-full border border-border ${ACCENT_SWATCHES[candidate]} ${
+              accent === candidate
+                ? "ring-2 ring-ring ring-offset-2 ring-offset-background"
+                : ""
+            }`}
+          />
+        ))}
+      </div>
+    </>
+  )
 }
 
 export const SidebarAppearance = () => {
@@ -60,6 +104,7 @@ export const SidebarAppearance = () => {
             <Monitor className="mr-2 h-4 w-4" />
             System
           </DropdownMenuItem>
+          <AccentPicker />
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>
@@ -98,6 +143,7 @@ export const Appearance = () => {
             <Monitor className="mr-2 h-4 w-4" />
             System
           </DropdownMenuItem>
+          <AccentPicker />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

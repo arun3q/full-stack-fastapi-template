@@ -1,10 +1,35 @@
-from sqlmodel import Session, create_engine, select
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import create_engine, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app import crud
 from app.core.config import settings
 from app.models import User, UserCreate
 
-engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+# Synchronous engine, used for Alembic migrations and CLI/pre-start scripts.
+engine = create_engine(
+    str(settings.SQLALCHEMY_DATABASE_URI),
+    pool_pre_ping=settings.POSTGRES_POOL_PRE_PING,
+    pool_size=settings.POSTGRES_POOL_SIZE,
+    max_overflow=settings.POSTGRES_MAX_OVERFLOW,
+    pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
+)
+
+# Asynchronous engine, used by the application for request/response handling.
+# The same psycopg driver is used in async mode, so no extra dependency is needed.
+async_engine = create_async_engine(
+    str(settings.SQLALCHEMY_DATABASE_URI),
+    pool_pre_ping=settings.POSTGRES_POOL_PRE_PING,
+    pool_size=settings.POSTGRES_POOL_SIZE,
+    max_overflow=settings.POSTGRES_MAX_OVERFLOW,
+    pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
+)
+
+async_session_factory = async_sessionmaker(
+    async_engine, class_=AsyncSession, expire_on_commit=False
+)
 
 
 # make sure all SQLModel models are imported (app.models) before initializing DB
@@ -12,7 +37,13 @@ engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 # for more details: https://github.com/fastapi/full-stack-fastapi-template/issues/28
 
 
-def init_db(session: Session) -> None:
+async def get_async_session() -> AsyncGenerator[AsyncSession]:
+    """Dependency that yields an async DB session for the duration of a request."""
+    async with async_session_factory() as session:
+        yield session
+
+
+async def init_db(session: AsyncSession) -> None:
     # Tables should be created with Alembic migrations
     # But if you don't want to use migrations, create
     # the tables un-commenting the next lines
@@ -21,8 +52,8 @@ def init_db(session: Session) -> None:
     # This works because the models are already imported and registered from app.models
     # SQLModel.metadata.create_all(engine)
 
-    user = session.exec(
-        select(User).where(User.email == settings.FIRST_SUPERUSER)
+    user = (
+        await session.exec(select(User).where(User.email == settings.FIRST_SUPERUSER))
     ).first()
     if not user:
         user_in = UserCreate(
@@ -30,4 +61,4 @@ def init_db(session: Session) -> None:
             password=settings.FIRST_SUPERUSER_PASSWORD,
             is_superuser=True,
         )
-        user = crud.create_user(session=session, user_create=user_in)
+        user = await crud.create_user(session=session, user_create=user_in)

@@ -67,6 +67,16 @@ class Settings(BaseSettings):
             path=self.POSTGRES_DB,
         )
 
+    # Database connection pool tuning
+    POSTGRES_POOL_SIZE: int = 10
+    POSTGRES_MAX_OVERFLOW: int = 20
+    POSTGRES_POOL_TIMEOUT: int = 30
+    POSTGRES_POOL_PRE_PING: bool = True
+
+    # Redis / background jobs
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Emails
     SMTP_TLS: bool = True
     SMTP_SSL: bool = False
     SMTP_PORT: int = 587
@@ -75,6 +85,36 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     EMAILS_FROM_EMAIL: EmailStr | None = None
     EMAILS_FROM_NAME: str | None = None
+
+    # Payments
+    PAYMENT_PROVIDER: Literal["stripe", "razorpay", "none"] = "none"
+    STRIPE_SECRET_KEY: str | None = None
+    STRIPE_PUBLISHABLE_KEY: str | None = None
+    STRIPE_WEBHOOK_SECRET: str | None = None
+    STRIPE_PRICE_ID: str | None = None
+    RAZORPAY_KEY_ID: str | None = None
+    RAZORPAY_KEY_SECRET: str | None = None
+    RAZORPAY_WEBHOOK_SECRET: str | None = None
+    RAZORPAY_PLAN_ID: str | None = None
+
+    # Social OAuth providers
+    OAUTH_CALLBACK_BASE_URL: str = "http://localhost:8000/api/v1"
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    LINKEDIN_CLIENT_ID: str | None = None
+    LINKEDIN_CLIENT_SECRET: str | None = None
+    META_CLIENT_ID: str | None = None
+    META_CLIENT_SECRET: str | None = None
+    GITHUB_CLIENT_ID: str | None = None
+    GITHUB_CLIENT_SECRET: str | None = None
+
+    # AI / LLM providers
+    AI_PROVIDER: Literal["openai", "anthropic", "none"] = "none"
+    OPENAI_API_KEY: str | None = None
+    OPENAI_BASE_URL: str | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    ANTHROPIC_API_KEY: str | None = None
+    ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
 
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

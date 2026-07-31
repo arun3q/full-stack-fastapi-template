@@ -7,6 +7,7 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { AuthLayout } from "@/components/Common/AuthLayout"
+import { OAuthButtons } from "@/components/Common/OAuthButtons"
 import {
   Form,
   FormControl,
@@ -182,6 +183,7 @@ function SignUp() {
           </div>
         </form>
       </Form>
+      <OAuthButtons />
     </AuthLayout>
   )
 }

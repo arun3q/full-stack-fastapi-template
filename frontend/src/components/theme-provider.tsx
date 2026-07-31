@@ -8,6 +8,12 @@ import {
 
 export type Theme = "dark" | "light" | "system"
 
+export type Accent = "default" | "teal" | "rose" | "amber" | "violet"
+
+export const ACCENTS: Accent[] = ["default", "teal", "rose", "amber", "violet"]
+
+const ACCENT_STORAGE_KEY = "vite-ui-accent"
+
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: Theme
@@ -18,12 +24,16 @@ type ThemeProviderState = {
   theme: Theme
   resolvedTheme: "dark" | "light"
   setTheme: (theme: Theme) => void
+  accent: Accent
+  setAccent: (accent: Accent) => void
 }
 
 const initialState: ThemeProviderState = {
   theme: "system",
   resolvedTheme: "light",
   setTheme: () => null,
+  accent: "default",
+  setAccent: () => null,
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
@@ -89,12 +99,25 @@ export function ThemeProvider({
     }
   }, [theme, updateTheme, getResolvedTheme])
 
+  const [accent, setAccent] = useState<Accent>(
+    () => (localStorage.getItem(ACCENT_STORAGE_KEY) as Accent) || "default",
+  )
+
+  useEffect(() => {
+    window.document.documentElement.dataset.accent = accent
+  }, [accent])
+
   const value = {
     theme,
     resolvedTheme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme)
       setTheme(theme)
+    },
+    accent,
+    setAccent: (accent: Accent) => {
+      localStorage.setItem(ACCENT_STORAGE_KEY, accent)
+      setAccent(accent)
     },
   }
 

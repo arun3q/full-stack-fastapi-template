@@ -9,6 +9,7 @@ import { z } from "zod"
 
 import type { Body_login_login_access_token as AccessToken } from "@/client"
 import { AuthLayout } from "@/components/Common/AuthLayout"
+import { OAuthButtons } from "@/components/Common/OAuthButtons"
 import {
   Form,
   FormControl,
@@ -137,6 +138,7 @@ function Login() {
           </div>
         </form>
       </Form>
+      <OAuthButtons />
     </AuthLayout>
   )
 }

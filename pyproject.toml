@@ -8,6 +8,13 @@ github-actions = [
     "smokeshow >=0.5.0",
 ]
 
+[tool.mypy]
+# pre-commit runs `mypy backend/app` from the repository root, so the config
+# for untyped third-party libraries lives here.
+[[tool.mypy.overrides]]
+module = ["authlib.*", "razorpay", "razorpay.*"]
+ignore_missing_imports = true
+
 [tool.uv.workspace]
 members = ["backend"]
 

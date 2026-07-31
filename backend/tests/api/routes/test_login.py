@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from pwdlib.hashers.bcrypt import BcryptHasher
-from sqlmodel import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
@@ -13,7 +13,7 @@ from tests.utils.user import user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
 
-def test_get_access_token(client: TestClient) -> None:
+async def test_get_access_token(client: TestClient) -> None:
     login_data = {
         "username": settings.FIRST_SUPERUSER,
         "password": settings.FIRST_SUPERUSER_PASSWORD,
@@ -25,7 +25,7 @@ def test_get_access_token(client: TestClient) -> None:
     assert tokens["access_token"]
 
 
-def test_get_access_token_incorrect_password(client: TestClient) -> None:
+async def test_get_access_token_incorrect_password(client: TestClient) -> None:
     login_data = {
         "username": settings.FIRST_SUPERUSER,
         "password": "incorrect",
@@ -34,7 +34,7 @@ def test_get_access_token_incorrect_password(client: TestClient) -> None:
     assert r.status_code == 400
 
 
-def test_use_access_token(
+async def test_use_access_token(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
     r = client.post(
@@ -46,7 +46,7 @@ def test_use_access_token(
     assert "email" in result
 
 
-def test_recovery_password(
+async def test_recovery_password(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
     with (
@@ -64,7 +64,7 @@ def test_recovery_password(
         }
 
 
-def test_recovery_password_user_not_exits(
+async def test_recovery_password_user_not_exits(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
     email = "jVgQr@example.com"
@@ -79,7 +79,7 @@ def test_recovery_password_user_not_exits(
     }
 
 
-def test_reset_password(client: TestClient, db: Session) -> None:
+async def test_reset_password(client: TestClient, db: AsyncSession) -> None:
     email = random_email()
     password = random_lower_string()
     new_password = random_lower_string()
@@ -91,7 +91,7 @@ def test_reset_password(client: TestClient, db: Session) -> None:
         is_active=True,
         is_superuser=False,
     )
-    user = create_user(session=db, user_create=user_create)
+    user = await create_user(session=db, user_create=user_create)
     token = generate_password_reset_token(email=email)
     headers = user_authentication_headers(client=client, email=email, password=password)
     data = {"new_password": new_password, "token": token}
@@ -105,12 +105,12 @@ def test_reset_password(client: TestClient, db: Session) -> None:
     assert r.status_code == 200
     assert r.json() == {"message": "Password updated successfully"}
 
-    db.refresh(user)
-    verified, _ = verify_password(new_password, user.hashed_password)
+    await db.refresh(user)
+    verified, _ = verify_password(new_password, user.hashed_password or "")
     assert verified
 
 
-def test_reset_password_invalid_token(
+async def test_reset_password_invalid_token(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
     data = {"new_password": "changethis", "token": "invalid"}
@@ -126,8 +126,8 @@ def test_reset_password_invalid_token(
     assert response["detail"] == "Invalid token"
 
 
-def test_login_with_bcrypt_password_upgrades_to_argon2(
-    client: TestClient, db: Session
+async def test_login_with_bcrypt_password_upgrades_to_argon2(
+    client: TestClient, db: AsyncSession
 ) -> None:
     """Test that logging in with a bcrypt password hash upgrades it to argon2."""
     email = random_email()
@@ -140,8 +140,8 @@ def test_login_with_bcrypt_password_upgrades_to_argon2(
 
     user = User(email=email, hashed_password=bcrypt_hash, is_active=True)
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
 
     assert user.hashed_password.startswith("$2")
 
@@ -151,18 +151,20 @@ def test_login_with_bcrypt_password_upgrades_to_argon2(
     tokens = r.json()
     assert "access_token" in tokens
 
-    db.refresh(user)
+    await db.refresh(user)
 
     # Verify the hash was upgraded to argon2
     assert user.hashed_password.startswith("$argon2")
 
-    verified, updated_hash = verify_password(password, user.hashed_password)
+    verified, updated_hash = verify_password(password, user.hashed_password or "")
     assert verified
     # Should not need another update since it's already argon2
     assert updated_hash is None
 
 
-def test_login_with_argon2_password_keeps_hash(client: TestClient, db: Session) -> None:
+async def test_login_with_argon2_password_keeps_hash(
+    client: TestClient, db: AsyncSession
+) -> None:
     """Test that logging in with an argon2 password hash does not update it."""
     email = random_email()
     password = random_lower_string()
@@ -174,8 +176,8 @@ def test_login_with_argon2_password_keeps_hash(client: TestClient, db: Session) 
     # Create user with argon2 hash
     user = User(email=email, hashed_password=argon2_hash, is_active=True)
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
 
     original_hash = user.hashed_password
 
@@ -185,7 +187,7 @@ def test_login_with_argon2_password_keeps_hash(client: TestClient, db: Session) 
     tokens = r.json()
     assert "access_token" in tokens
 
-    db.refresh(user)
+    await db.refresh(user)
 
     assert user.hashed_password == original_hash
     assert user.hashed_password.startswith("$argon2")

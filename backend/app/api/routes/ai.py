@@ -1,0 +1,60 @@
+import json
+from collections.abc import AsyncIterator
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.api.deps import CurrentUser
+from app.core.ai import get_ai_provider
+from app.models import ChatRequest
+
+router = APIRouter(prefix="/ai", tags=["ai"])
+
+
+@router.get("/health")
+async def ai_health() -> dict[str, Any]:
+    """Return the configured AI provider diagnostics."""
+    provider = get_ai_provider()
+    if provider is None:
+        return {"provider": None, "configured": False}
+    return await provider.health()
+
+
+@router.post("/chat")
+async def chat_stream(
+    body: ChatRequest, _current_user: CurrentUser
+) -> StreamingResponse:
+    """
+    Stream a chat completion as Server-Sent Events.
+
+    Each event is ``data: {json}\n\n`` with ``{"token": "..."}`` deltas and a
+    final ``{"event": "done"}`` event.
+    """
+    provider = get_ai_provider()
+    if provider is None:
+        raise HTTPException(status_code=503, detail="No AI provider configured")
+
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+
+    async def event_generator() -> AsyncIterator[str]:
+        yield 'data: {"event": "start"}\n\n'
+        try:
+            async for token in provider.stream_chat(
+                messages=messages, system_prompt=body.system_prompt
+            ):
+                payload = json.dumps({"token": token}, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
+        except Exception:
+            yield 'data: {"event": "error", "message": "Stream failed"}\n\n'
+            return
+        yield 'data: {"event": "done"}\n\n'
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
