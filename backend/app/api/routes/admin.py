@@ -95,21 +95,32 @@ async def admin_organizations(
     else:
         statement = statement.offset(skip)
     orgs = (await session.exec(statement)).all()
+
+    # Single pass member counts (GROUP BY) to avoid N+1
+    org_ids = [org.id for org in orgs]
+    counts: dict[str, int] = {}
+    if org_ids:
+        rows = (
+            await session.exec(
+                select(
+                    OrganizationMember.organization_id,
+                    func.count(col(OrganizationMember.id)),
+                )
+                .where(col(OrganizationMember.organization_id).in_(org_ids))
+                .group_by(col(OrganizationMember.organization_id))
+            )
+        ).all()
+        for org_id, count in rows:
+            counts[str(org_id)] = int(count)
+
     data: list[dict[str, Any]] = []
     for org in orgs:
-        member_count = (
-            await session.exec(
-                select(func.count())
-                .select_from(OrganizationMember)
-                .where(OrganizationMember.organization_id == org.id)
-            )
-        ).one()
         data.append(
             {
                 "id": str(org.id),
                 "name": org.name,
                 "slug": org.slug,
-                "member_count": member_count,
+                "member_count": counts.get(str(org.id), 0),
                 "created_at": org.created_at,
             }
         )

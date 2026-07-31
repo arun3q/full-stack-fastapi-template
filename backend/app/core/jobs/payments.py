@@ -123,4 +123,9 @@ async def process_payment_event_job(
             logger.info("Processed webhook event %s: %s", provider_event_id, event_type)
         except Exception:
             logger.exception("Failed to reconcile webhook event %s", provider_event_id)
-            await session.rollback()
+            # Persist the event as failed (durable record / DLQ substitute)
+            event.status = "failed"
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()

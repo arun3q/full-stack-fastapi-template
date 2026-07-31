@@ -34,7 +34,9 @@ class IdempotencyMiddleware:
             await self.app(scope, receive, send)
             return
 
-        cache_key = f"idem:{key}"
+        # Scope the idempotency key to the method + path so the same key on
+        # different endpoints can't collide.
+        cache_key = f"idem:{method}:{scope.get('path', '')}:{key}"
         cached = await cache_get(cache_key)
         if cached is not None and isinstance(cached, dict):
             await _send_cached(cached, send)
@@ -60,18 +62,19 @@ class IdempotencyMiddleware:
             await _send_raw(state["code"], response_headers, body, send)
             return
 
-        await cache_set(
-            cache_key,
-            {
-                "status": state["code"],
-                "headers": [
-                    [k.decode("latin-1"), v.decode("latin-1")]
-                    for k, v in response_headers
-                ],
-                "body": body.decode("utf-8", errors="replace"),
-            },
-            ttl_seconds=_IDEMPOTENCY_TTL,
-        )
+        if state["code"] < 400:
+            await cache_set(
+                cache_key,
+                {
+                    "status": state["code"],
+                    "headers": [
+                        [k.decode("latin-1"), v.decode("latin-1")]
+                        for k, v in response_headers
+                    ],
+                    "body": body.decode("utf-8", errors="replace"),
+                },
+                ttl_seconds=_IDEMPOTENCY_TTL,
+            )
         await _send_raw(state["code"], response_headers, body, send)
 
 

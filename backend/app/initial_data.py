@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlmodel import select
 
+from app.core.cache import cache_delete
 from app.core.db import async_session_factory, init_db
 from app.models import Plan
 
@@ -98,6 +99,7 @@ async def seed_plans() -> None:
             plan = Plan(**plan_data)
             session.add(plan)
         await session.commit()
+        await cache_delete("plans")
         logger.info("Seeded %d default plans", len(DEFAULT_PLANS))
 
 

@@ -168,7 +168,7 @@ class OrganizationMember(SQLModel, table=True):
         foreign_key="organization.id", nullable=False, ondelete="CASCADE"
     )
     user_id: uuid.UUID = Field(
-        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
     )
     role: str = Field(default=ORG_ROLE_MEMBER, max_length=30)
     created_at: datetime | None = Field(
@@ -204,7 +204,7 @@ class OrganizationInvite(SQLModel, table=True):
     invited_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
-    status: str = Field(default=INVITE_PENDING, max_length=20)
+    status: str = Field(default=INVITE_PENDING, max_length=20, index=True)
     expires_at: datetime | None = Field(
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -332,13 +332,13 @@ class PlansPublic(SQLModel):
 class Subscription(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     organization_id: uuid.UUID | None = Field(
-        default=None, foreign_key="organization.id", ondelete="CASCADE"
+        default=None, foreign_key="organization.id", ondelete="CASCADE", index=True
     )
     user_id: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="CASCADE"
     )
     plan_id: uuid.UUID | None = Field(
-        default=None, foreign_key="plan.id", ondelete="RESTRICT"
+        default=None, foreign_key="plan.id", ondelete="RESTRICT", index=True
     )
     provider: str = Field(max_length=20, index=True)
     provider_subscription_id: str | None = Field(
@@ -449,7 +449,7 @@ class Item(ItemBase, table=True):
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     organization_id: uuid.UUID | None = Field(
-        default=None, foreign_key="organization.id", ondelete="CASCADE"
+        default=None, foreign_key="organization.id", ondelete="CASCADE", index=True
     )
     owner_id: uuid.UUID = Field(
         foreign_key="user.id", nullable=False, ondelete="CASCADE"
@@ -509,7 +509,7 @@ class NewPassword(SQLModel):
 class Session(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID = Field(
-        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
     )
     refresh_token_hash: str = Field(unique=True, index=True, max_length=255)
     ip_address: str | None = Field(default=None, max_length=64)
@@ -630,17 +630,18 @@ class WebhooksPublic(SQLModel):
 class WebhookDelivery(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     webhook_id: uuid.UUID = Field(
-        foreign_key="webhook.id", nullable=False, ondelete="CASCADE"
+        foreign_key="webhook.id", nullable=False, ondelete="CASCADE", index=True
     )
     event: str = Field(max_length=100)
     payload: str = Field(default="{}", max_length=10000)
-    status: str = Field(default="pending", max_length=20)
+    status: str = Field(default="pending", max_length=20, index=True)
     attempts: int = 0
     response_status: int | None = None
     response_body: str | None = Field(default=None, max_length=2000)
     next_retry_at: datetime | None = Field(
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,

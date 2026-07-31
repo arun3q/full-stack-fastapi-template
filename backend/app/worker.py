@@ -56,7 +56,7 @@ class WorkerSettings:
     on_shutdown = shutdown
     max_jobs = 10
     job_timeout = 300
-    keep_result = 60
+    keep_result = 3600
 
 
 async def _run() -> None:

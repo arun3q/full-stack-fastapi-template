@@ -17,6 +17,7 @@ engine = create_engine(
     pool_size=settings.POSTGRES_POOL_SIZE,
     max_overflow=settings.POSTGRES_MAX_OVERFLOW,
     pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
+    pool_recycle=600,
 )
 
 # Asynchronous engine, used by the application for request/response handling.
@@ -27,6 +28,7 @@ async_engine = create_async_engine(
     pool_size=settings.POSTGRES_POOL_SIZE,
     max_overflow=settings.POSTGRES_MAX_OVERFLOW,
     pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
+    pool_recycle=600,
 )
 
 async_session_factory = async_sessionmaker(
@@ -42,6 +44,7 @@ if settings.READ_REPLICA_URL:
         pool_size=settings.POSTGRES_POOL_SIZE,
         max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
+        pool_recycle=600,
     )
 _read_session_factory = async_sessionmaker(
     _read_engine if _read_engine is not None else async_engine,

@@ -11,6 +11,7 @@ from app.api.deps import (
     SessionDep,
     require_org_permission,
 )
+from app.core.access import invalidate_active_plan
 from app.core.cache import cached
 from app.core.config import settings
 from app.core.jobs import enqueue_job
@@ -140,6 +141,7 @@ async def change_plan(
     subscription.plan_id = new_plan.id
     session.add(subscription)
     await session.commit()
+    await invalidate_active_plan(current_org.id)
     await session.refresh(subscription)
     data = SubscriptionPublic.model_validate(subscription)
     data.plan = PlanPublic.model_validate(new_plan)
@@ -241,6 +243,7 @@ async def cancel_subscription(session: SessionDep, current_org: CurrentOrg) -> A
     subscription.cancel_at_period_end = True
     session.add(subscription)
     await session.commit()
+    await invalidate_active_plan(current_org.id)
     return Message(message="Subscription canceled")
 
 

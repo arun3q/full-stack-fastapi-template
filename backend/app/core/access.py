@@ -16,11 +16,13 @@ organization's subscription.
 """
 
 import json
+import uuid
 from typing import Any
 
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.cache import cache_delete, cache_get, cache_set
 from app.core.config import settings
 from app.models import (
     ROLE_ADMIN,
@@ -33,6 +35,16 @@ from app.models import (
 AI_PLANS = ("pro", "business", "enterprise")
 UNLIMITED_PLANS = ("business", "enterprise")
 FREE_PLAN_SLUG = "free"
+
+_ACTIVE_PLAN_TTL = 60
+
+
+def _active_plan_cache_key(organization_id: Any) -> str:
+    return f"active_plan:{organization_id}"
+
+
+async def invalidate_active_plan(organization_id: Any) -> None:
+    await cache_delete(_active_plan_cache_key(organization_id))
 
 
 def is_admin(user: User) -> bool:
@@ -60,7 +72,15 @@ def plan_quota(plan: Plan | None, key: str, default: int = 0) -> int:
 
 
 async def get_active_plan(session: AsyncSession, organization_id: Any) -> Plan | None:
-    """Return the active organization's current subscription plan, if any."""
+    """Return the active organization's current subscription plan, if any.
+
+    Cached per organization (60s) and invalidated on subscription changes.
+    """
+    cached_id = await cache_get(_active_plan_cache_key(organization_id))
+    if cached_id:
+        plan = await session.get(Plan, uuid.UUID(str(cached_id)))
+        if plan is not None:
+            return plan
     subscription = (
         await session.exec(
             select(Subscription)
@@ -73,7 +93,14 @@ async def get_active_plan(session: AsyncSession, organization_id: Any) -> Plan |
     ).first()
     if subscription is None or subscription.plan_id is None:
         return None
-    return await session.get(Plan, subscription.plan_id)
+    plan = await session.get(Plan, subscription.plan_id)
+    if plan is not None:
+        await cache_set(
+            _active_plan_cache_key(organization_id),
+            str(plan.id),
+            ttl_seconds=_ACTIVE_PLAN_TTL,
+        )
+    return plan
 
 
 def resolve_features(*, user: User, plan: Plan | None) -> list[str]:
