@@ -20,7 +20,10 @@ DEFAULT_PLANS: list[dict[str, Any]] = [
         "currency": "usd",
         "billing_interval": "month",
         "features": json.dumps(["1 project", "Community support"]),
-        "quotas": json.dumps({"max_items": 5, "max_seats": 1}),
+        "trial_days": 0,
+        "quotas": json.dumps(
+            {"max_items": 5, "max_seats": 1, "ai_calls": 20, "storage_bytes": 104857600}
+        ),
     },
     {
         "name": "Pro",
@@ -32,7 +35,15 @@ DEFAULT_PLANS: list[dict[str, Any]] = [
         "features": json.dumps(
             ["Unlimited projects", "Priority email support", "Advanced analytics"]
         ),
-        "quotas": json.dumps({"max_items": 100, "max_seats": 3}),
+        "trial_days": 14,
+        "quotas": json.dumps(
+            {
+                "max_items": 100,
+                "max_seats": 3,
+                "ai_calls": 2000,
+                "storage_bytes": 1073741824,
+            }
+        ),
     },
     {
         "name": "Business",
@@ -44,7 +55,15 @@ DEFAULT_PLANS: list[dict[str, Any]] = [
         "features": json.dumps(
             ["Everything in Pro", "Team seats (5)", "SSO & audit logs", "API access"]
         ),
-        "quotas": json.dumps({"max_items": 1000, "max_seats": 10}),
+        "trial_days": 0,
+        "quotas": json.dumps(
+            {
+                "max_items": 1000,
+                "max_seats": 10,
+                "ai_calls": 10000,
+                "storage_bytes": 10737418240,
+            }
+        ),
     },
     {
         "name": "Enterprise",
@@ -61,7 +80,10 @@ DEFAULT_PLANS: list[dict[str, Any]] = [
                 "Dedicated account manager",
             ]
         ),
-        "quotas": json.dumps({"max_items": 0, "max_seats": 0}),
+        "trial_days": 0,
+        "quotas": json.dumps(
+            {"max_items": 0, "max_seats": 0, "ai_calls": 0, "storage_bytes": 0}
+        ),
     },
 ]
 

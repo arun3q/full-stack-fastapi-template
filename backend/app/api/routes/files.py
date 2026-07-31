@@ -8,8 +8,10 @@ from app.api.deps import (
     SessionDep,
     require_org_permission,
 )
+from app.core.access import billing_enabled, get_active_plan, is_staff
 from app.core.audit import record_audit
 from app.core.storage import StorageError, upload_file
+from app.core.usage import check_quota, record_usage
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -27,6 +29,21 @@ async def upload(
 ) -> Any:
     """Upload a file to S3-compatible storage and return its public URL."""
     content = await file.read()
+
+    # Metered storage quota (only when billing is configured)
+    if billing_enabled() and not is_staff(current_user):
+        plan = await get_active_plan(session, current_org.id)
+        if not await check_quota(
+            session,
+            organization_id=current_org.id,
+            meter="storage_bytes",
+            amount=len(content),
+            plan=plan,
+        ):
+            raise HTTPException(
+                status_code=413, detail="Storage quota exceeded for your plan"
+            )
+
     try:
         url = await upload_file(
             filename=file.filename or "file",
@@ -35,13 +52,21 @@ async def upload(
         )
     except StorageError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+
+    await record_usage(
+        session,
+        organization_id=current_org.id,
+        meter="storage_bytes",
+        amount=len(content),
+        user_id=current_user.id,
+    )
     await record_audit(
         session,
         action="file.upload",
         user_id=current_user.id,
         organization_id=current_org.id,
         entity_type="file",
-        detail={"filename": file.filename},
+        detail={"filename": file.filename, "bytes": len(content)},
     )
     await session.commit()
     return {"url": url}

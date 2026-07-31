@@ -13,6 +13,7 @@ from app.models import (
     Item,
     Organization,
     OrganizationMember,
+    Plan,
     Subscription,
     User,
     UserPublic,
@@ -25,7 +26,7 @@ admin_only = [Depends(get_current_active_superuser)]
 
 @router.get("/overview", dependencies=admin_only)
 async def admin_overview(session: ReadSessionDep) -> dict[str, int]:
-    """Platform-wide counters for the admin console."""
+    """Platform-wide counters + MRR for the admin console."""
     counts: dict[str, int] = {}
     for label, model in [
         ("users", User),
@@ -44,6 +45,23 @@ async def admin_overview(session: ReadSessionDep) -> dict[str, int]:
         )
     ).one()
     counts["active_subscriptions"] = active_subs
+
+    # Monthly recurring revenue (annualized to monthly)
+    mrr_cents = 0
+    active_subscriptions = (
+        await session.exec(
+            select(Subscription).where(col(Subscription.status) == "active")
+        )
+    ).all()
+    for subscription in active_subscriptions:
+        plan = await session.get(Plan, subscription.plan_id)
+        if plan is None:
+            continue
+        if plan.billing_interval == "year":
+            mrr_cents += plan.amount_cents // 12
+        else:
+            mrr_cents += plan.amount_cents
+    counts["mrr_cents"] = mrr_cents
     return counts
 
 

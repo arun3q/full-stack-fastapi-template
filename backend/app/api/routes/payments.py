@@ -65,6 +65,21 @@ async def create_checkout(
     plan = (await session.exec(select(Plan).where(Plan.id == plan_id))).first()
     if not plan or not plan.is_active:
         raise HTTPException(status_code=404, detail="Plan not found")
+
+    # Single-active-subscription guard
+    existing = (
+        await session.exec(
+            select(Subscription).where(
+                Subscription.organization_id == current_org.id,
+                col(Subscription.status).in_(["active", "trialing", "past_due"]),
+            )
+        )
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=409, detail="Organization already has an active subscription"
+        )
+
     try:
         session_data = await provider.create_checkout_session(
             plan=plan,
@@ -76,6 +91,59 @@ async def create_checkout(
     except PaymentError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"id": session_data["id"], "url": session_data["url"]}
+
+
+@router.post(
+    "/change-plan",
+    dependencies=[Depends(require_org_permission("billing:manage"))],
+    response_model=SubscriptionPublic,
+)
+async def change_plan(
+    *, session: SessionDep, current_org: CurrentOrg, plan_id: str
+) -> Any:
+    """Upgrade/downgrade the active subscription's plan (with proration)."""
+    provider = get_payment_provider()
+    if provider is None:
+        raise HTTPException(status_code=503, detail="No payment provider configured")
+    new_plan = (await session.exec(select(Plan).where(Plan.id == plan_id))).first()
+    if not new_plan or not new_plan.is_active:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    subscription = (
+        await session.exec(
+            select(Subscription).where(
+                Subscription.organization_id == current_org.id,
+                col(Subscription.status).in_(["active", "trialing", "past_due"]),
+            )
+        )
+    ).first()
+    if not subscription or not subscription.provider_subscription_id:
+        raise HTTPException(status_code=404, detail="No active subscription found")
+
+    price_id = new_plan.provider_plan_id or (
+        settings.STRIPE_PRICE_ID
+        if settings.PAYMENT_PROVIDER == "stripe"
+        else settings.RAZORPAY_PLAN_ID
+    )
+    if not price_id:
+        raise HTTPException(
+            status_code=400, detail="Plan is not linked to a provider price"
+        )
+    try:
+        await provider.change_subscription_plan(
+            provider_subscription_id=subscription.provider_subscription_id,
+            new_price_id=price_id,
+        )
+    except PaymentError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    subscription.plan_id = new_plan.id
+    session.add(subscription)
+    await session.commit()
+    await session.refresh(subscription)
+    data = SubscriptionPublic.model_validate(subscription)
+    data.plan = PlanPublic.model_validate(new_plan)
+    return data
 
 
 @router.post("/webhook")

@@ -5,9 +5,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser, require_plan
-from app.core.access import AI_PLANS
+from app.api.deps import (
+    CurrentOrg,
+    CurrentUser,
+    SessionDep,
+    require_plan,
+)
+from app.core.access import AI_PLANS, billing_enabled, get_active_plan, is_staff
 from app.core.ai import get_ai_provider
+from app.core.usage import check_quota, record_usage
 from app.models import ChatRequest
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -27,17 +33,35 @@ async def ai_health() -> dict[str, Any]:
     dependencies=[Depends(require_plan(*AI_PLANS))],
 )
 async def chat_stream(
-    body: ChatRequest, _current_user: CurrentUser
+    body: ChatRequest,
+    session: SessionDep,
+    current_org: CurrentOrg,
+    _current_user: CurrentUser,
 ) -> StreamingResponse:
     """
     Stream a chat completion as Server-Sent Events.
 
     Each event is ``data: {json}\n\n`` with ``{"token": "..."}`` deltas and a
-    final ``{"event": "done"}`` event.
+    final ``{"event": "done"}`` event. AI calls are metered against the org's
+    plan quota (``ai_calls``).
     """
     provider = get_ai_provider()
     if provider is None:
         raise HTTPException(status_code=503, detail="No AI provider configured")
+
+    # Metered quota check (only when billing is configured)
+    if billing_enabled() and not is_staff(_current_user):
+        plan = await get_active_plan(session, current_org.id)
+        if not await check_quota(
+            session,
+            organization_id=current_org.id,
+            meter="ai_calls",
+            amount=1,
+            plan=plan,
+        ):
+            raise HTTPException(
+                status_code=429, detail="AI usage quota exceeded for your plan"
+            )
 
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
@@ -52,6 +76,14 @@ async def chat_stream(
         except Exception:
             yield 'data: {"event": "error", "message": "Stream failed"}\n\n'
             return
+        # Record metered usage for the completed call
+        await record_usage(
+            session,
+            organization_id=current_org.id,
+            meter="ai_calls",
+            amount=1,
+        )
+        await session.commit()
         yield 'data: {"event": "done"}\n\n'
 
     return StreamingResponse(

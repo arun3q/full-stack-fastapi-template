@@ -284,8 +284,9 @@ class Plan(SQLModel, table=True):
     billing_interval: str = Field(default="month", max_length=20)
     provider_plan_id: str | None = Field(default=None, max_length=255)
     is_active: bool = True
+    trial_days: int = 0
     features: str | None = Field(default=None, max_length=2000)
-    # JSON string, e.g. {"max_items": 5, "max_seats": 1}
+    # JSON string, e.g. {"max_items": 5, "max_seats": 1, "ai_calls": 50}
     quotas: str | None = Field(default=None, max_length=2000)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
@@ -342,6 +343,7 @@ class Subscription(SQLModel, table=True):
     )
     provider_customer_id: str | None = Field(default=None, max_length=255)
     status: str = Field(default="incomplete", max_length=30, index=True)
+    quantity: int = 1
     current_period_start: datetime | None = Field(
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -372,6 +374,9 @@ class SubscriptionPublic(SQLModel):
 
 class PaymentEvent(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    organization_id: uuid.UUID | None = Field(
+        default=None, foreign_key="organization.id", ondelete="SET NULL"
+    )
     user_id: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
@@ -382,6 +387,24 @@ class PaymentEvent(SQLModel, table=True):
     currency: str | None = Field(default=None, max_length=10)
     status: str | None = Field(default=None, max_length=50)
     raw: str = Field(default="{}", max_length=10000)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class UsageEvent(SQLModel, table=True):
+    """A single metered usage record for an organization and meter."""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    organization_id: uuid.UUID = Field(
+        foreign_key="organization.id", nullable=False, ondelete="CASCADE"
+    )
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    meter: str = Field(max_length=50, index=True)
+    amount: int = 1
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

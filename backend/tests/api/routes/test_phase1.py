@@ -105,9 +105,7 @@ async def test_viewer_cannot_create_api_key(
     assert r.status_code == 403
 
 
-async def test_dunning_job_notifies_past_due_owner(
-    db: AsyncSession
-) -> None:
+async def test_dunning_job_notifies_past_due_owner(db: AsyncSession) -> None:
     email, password = await _create_user(db)
     user = (await db.exec(select(User).where(User.email == email))).first()
     assert user is not None
@@ -150,9 +148,7 @@ async def test_dunning_job_notifies_past_due_owner(
     assert "past due" in notification.title.lower()
 
 
-async def test_requeue_stale_webhook_deliveries(
-    db: AsyncSession
-) -> None:
+async def test_requeue_stale_webhook_deliveries(db: AsyncSession) -> None:
     email, password = await _create_user(db)
     user = (await db.exec(select(User).where(User.email == email))).first()
     assert user is not None

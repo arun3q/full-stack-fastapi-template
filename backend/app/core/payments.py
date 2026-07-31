@@ -142,6 +142,12 @@ class CheckoutProvider(ABC):
         """Cancel a subscription with the provider."""
 
     @abstractmethod
+    async def change_subscription_plan(
+        self, *, provider_subscription_id: str, new_price_id: str
+    ) -> None:
+        """Change the plan of an active subscription (with proration where possible)."""
+
+    @abstractmethod
     async def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:
         """Verify the authenticity of a webhook payload."""
 
@@ -185,22 +191,28 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
             raise PaymentError(
                 "Stripe price not configured for this plan (provider_plan_id)"
             )
-        session = await asyncio.to_thread(
-            self._stripe.checkout.Session.create,
-            mode="subscription",
-            line_items=[{"price": price_id, "quantity": 1}],
-            success_url=success_url,
-            cancel_url=cancel_url,
-            client_reference_id=str(organization.id),
-            customer_email=user.email,
-            metadata={
+        params: dict[str, Any] = {
+            "mode": "subscription",
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+            "client_reference_id": str(organization.id),
+            "customer_email": user.email,
+            "metadata": {
                 "plan_slug": plan.slug,
                 "organization_id": str(organization.id),
                 "user_id": str(user.id),
             },
-            allow_promotion_codes=True,
-            billing_address_collection="auto",
-        )
+            "allow_promotion_codes": True,
+            "billing_address_collection": "auto",
+        }
+        if plan.trial_days > 0:
+            params["trial_period_days"] = plan.trial_days
+
+        def _create() -> Any:
+            return self._stripe.checkout.Session.create(**params)
+
+        session = await asyncio.to_thread(_create)
         return {"id": session.id, "url": session.url}
 
     async def cancel_subscription(self, *, provider_subscription_id: str) -> None:
@@ -208,6 +220,20 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
             self._stripe.Subscription.cancel,
             provider_subscription_id,
         )
+
+    async def change_subscription_plan(
+        self, *, provider_subscription_id: str, new_price_id: str
+    ) -> None:
+        def _modify() -> None:
+            subscription = self._stripe.Subscription.retrieve(provider_subscription_id)
+            item_id = subscription["items"]["data"][0]["id"]
+            self._stripe.Subscription.modify(
+                provider_subscription_id,
+                items=[{"id": item_id, "price": new_price_id}],
+                proration_behavior="create_prorations",
+            )
+
+        await asyncio.to_thread(_modify)
 
     async def create_billing_portal_session(
         self, *, customer_id: str, return_url: str
@@ -358,6 +384,13 @@ class RazorpayProvider(CheckoutProvider):
     async def cancel_subscription(self, *, provider_subscription_id: str) -> None:
         client = self._client()
         await asyncio.to_thread(client.subscription.cancel, provider_subscription_id, 0)
+
+    async def change_subscription_plan(
+        self, *, provider_subscription_id: str, new_price_id: str
+    ) -> None:
+        raise PaymentError(
+            "Plan changes are not supported by Razorpay; cancel and re-subscribe"
+        )
 
     async def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:
         """Razorpay signs webhooks with HMAC-SHA256 of the raw body."""
