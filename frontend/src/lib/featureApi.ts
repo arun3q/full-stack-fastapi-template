@@ -98,6 +98,7 @@ export type ChatMessageInput = {
 }
 
 const TOKEN_KEY = "access_token"
+const REFRESH_KEY = "refresh_token"
 const ORG_KEY = "active_org_id"
 
 export function getActiveOrgId(): string | null {
@@ -109,6 +110,23 @@ export function setActiveOrgId(id: string | null): void {
   else localStorage.removeItem(ORG_KEY)
 }
 
+export function storeTokens(
+  accessToken: string,
+  refreshToken?: string | null,
+): void {
+  localStorage.setItem(TOKEN_KEY, accessToken)
+  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken)
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY)
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+}
+
 /** The generated client sends the active tenant on every request. */
 export function configureOpenApi() {
   OpenAPI.TOKEN = async () => localStorage.getItem(TOKEN_KEY) || ""
@@ -117,6 +135,31 @@ export function configureOpenApi() {
     const orgId = getActiveOrgId()
     if (orgId) headers["X-Organization-ID"] = orgId
     return headers
+  }
+}
+
+/**
+ * Exchange the stored refresh token for a fresh access token pair.
+ * Returns true on success; used to silently recover from a 401.
+ */
+export async function refreshSession(): Promise<boolean> {
+  const refresh = getRefreshToken()
+  if (!refresh) return false
+  try {
+    const response = await fetch(`${OpenAPI.BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    })
+    if (!response.ok) {
+      clearTokens()
+      return false
+    }
+    const data = await response.json()
+    storeTokens(data.access_token, data.refresh_token)
+    return true
+  } catch {
+    return false
   }
 }
 

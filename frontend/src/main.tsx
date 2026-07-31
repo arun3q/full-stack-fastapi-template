@@ -7,23 +7,19 @@ import {
 import { createRouter, RouterProvider } from "@tanstack/react-router"
 import { StrictMode } from "react"
 import ReactDOM from "react-dom/client"
+import { toast } from "sonner"
 import { ApiError, OpenAPI } from "./client"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
-import { configureOpenApi } from "./lib/featureApi"
+import { env } from "./lib/env"
+import { clearTokens, configureOpenApi, refreshSession } from "./lib/featureApi"
 import "./i18n"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
 
-OpenAPI.BASE = import.meta.env.VITE_API_URL ?? ""
+OpenAPI.BASE = env.VITE_API_URL
 configureOpenApi()
 
-const handleApiError = (error: Error) => {
-  if (error instanceof ApiError && [401, 403].includes(error.status)) {
-    localStorage.removeItem("access_token")
-    window.location.href = "/login"
-  }
-}
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: handleApiError,
@@ -32,6 +28,29 @@ const queryClient = new QueryClient({
     onError: handleApiError,
   }),
 })
+
+async function handleApiError(error: Error) {
+  if (error instanceof ApiError && [401, 403].includes(error.status)) {
+    // Silent recovery: try to rotate the refresh token before logging out.
+    const refreshed = await refreshSession()
+    if (refreshed) {
+      queryClient.invalidateQueries()
+      return
+    }
+    clearTokens()
+    window.location.href = "/login"
+    return
+  }
+  if (error instanceof ApiError) {
+    const detail =
+      typeof error.body === "object" &&
+      error.body !== null &&
+      "detail" in error.body
+        ? String((error.body as { detail: unknown }).detail)
+        : error.message
+    toast.error(detail)
+  }
+}
 
 const router = createRouter({ routeTree })
 declare module "@tanstack/react-router" {

@@ -6,6 +6,7 @@ import { logInUser } from "./utils/user"
 
 test("Admin page is accessible and shows correct title", async ({ page }) => {
   await page.goto("/admin")
+  await page.getByRole("tab", { name: "Users" }).click()
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible()
   await expect(
     page.getByText("Manage user accounts and permissions"),
@@ -14,12 +15,15 @@ test("Admin page is accessible and shows correct title", async ({ page }) => {
 
 test("Add User button is visible", async ({ page }) => {
   await page.goto("/admin")
+  await page.getByRole("tab", { name: "Users" }).click()
   await expect(page.getByRole("button", { name: "Add User" })).toBeVisible()
 })
 
 test.describe("Admin user management", () => {
   test("Create a new user successfully", async ({ page }) => {
     await page.goto("/admin")
+    await page.getByRole("tab", { name: "Users" }).click()
+    await page.getByRole("tab", { name: "Users" }).click()
 
     const email = randomEmail()
     const password = randomPassword()

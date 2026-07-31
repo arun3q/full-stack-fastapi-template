@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 
+import { storeTokens } from "@/lib/featureApi"
+
 type SearchParams = {
   token?: string
 }
@@ -20,7 +22,7 @@ function OAuthCallback() {
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem("access_token", token)
+      storeTokens(token)
       navigate({ to: "/dashboard" })
     } else {
       navigate({ to: "/login" })
