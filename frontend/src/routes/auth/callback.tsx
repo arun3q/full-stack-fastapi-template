@@ -21,7 +21,7 @@ function OAuthCallback() {
   useEffect(() => {
     if (token) {
       localStorage.setItem("access_token", token)
-      navigate({ to: "/" })
+      navigate({ to: "/dashboard" })
     } else {
       navigate({ to: "/login" })
     }

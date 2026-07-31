@@ -4,8 +4,8 @@ A single interface (``PaymentProvider``) lets the rest of the application stay
 provider-agnostic. Swap providers through the ``PAYMENT_PROVIDER`` setting
 (``stripe`` | ``razorpay`` | ``none``).
 
-All external SDK calls are run in a worker thread so they never block the event
-loop.
+Subscriptions belong to an **organization** (tenant). All external SDK calls are
+run in a worker thread so they never block the event loop.
 """
 
 import asyncio
@@ -19,7 +19,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.models import Plan, Subscription, User
+from app.models import Organization, Plan, Subscription, User
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,23 @@ async def _find_subscription_by_provider_id(
     ).first()
 
 
+async def _find_subscription_by_customer(
+    session: AsyncSession, customer_id: str | None
+) -> Subscription | None:
+    if not customer_id:
+        return None
+    return (
+        await session.exec(
+            select(Subscription).where(Subscription.provider_customer_id == customer_id)
+        )
+    ).first()
+
+
 async def _get_or_create_subscription(
     session: AsyncSession,
     *,
-    user_id: str | None,
+    organization_id: str | None,
+    user_id: str | None = None,
     provider_subscription_id: str | None,
     provider_customer_id: str | None,
     status: str,
@@ -93,6 +106,7 @@ async def _get_or_create_subscription(
         plan = await _find_active_plan(session)
 
     subscription = Subscription(
+        organization_id=cast(Any, organization_id),
         user_id=cast(Any, user_id),
         plan_id=plan.id if plan else None,
         provider="stripe" if settings.PAYMENT_PROVIDER == "stripe" else "razorpay",
@@ -114,6 +128,7 @@ class PaymentProvider(ABC):
         self,
         *,
         plan: Plan,
+        organization: Organization,
         user: User,
         success_url: str,
         cancel_url: str,
@@ -151,7 +166,13 @@ class StripeProvider(PaymentProvider):
         stripe.api_key = settings.STRIPE_SECRET_KEY
 
     async def create_checkout_session(
-        self, *, plan: Plan, user: User, success_url: str, cancel_url: str
+        self,
+        *,
+        plan: Plan,
+        organization: Organization,
+        user: User,
+        success_url: str,
+        cancel_url: str,
     ) -> dict[str, Any]:
         price_id = plan.provider_plan_id or settings.STRIPE_PRICE_ID
         if not price_id:
@@ -164,9 +185,13 @@ class StripeProvider(PaymentProvider):
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=success_url,
             cancel_url=cancel_url,
-            client_reference_id=str(user.id),
+            client_reference_id=str(organization.id),
             customer_email=user.email,
-            metadata={"plan_slug": plan.slug},
+            metadata={
+                "plan_slug": plan.slug,
+                "organization_id": str(organization.id),
+                "user_id": str(user.id),
+            },
             allow_promotion_codes=True,
             billing_address_collection="auto",
         )
@@ -206,11 +231,13 @@ class StripeProvider(PaymentProvider):
         obj = payload.get("data", {}).get("object", {})
 
         if event_type == "checkout.session.completed":
-            user_id = obj.get("client_reference_id")
-            if user_id:
+            organization_id = obj.get("client_reference_id")
+            metadata = obj.get("metadata") or {}
+            if organization_id:
                 await _get_or_create_subscription(
                     session,
-                    user_id=str(user_id),
+                    organization_id=str(organization_id),
+                    user_id=metadata.get("user_id"),
                     provider_subscription_id=obj.get("subscription"),
                     provider_customer_id=obj.get("customer"),
                     status="active"
@@ -225,18 +252,24 @@ class StripeProvider(PaymentProvider):
             "customer.subscription.deleted",
         }:
             sub_id = obj.get("id")
+            customer_id = obj.get("customer")
             items = obj.get("items", {}).get("data", [])
             price_id = items[0].get("price", {}).get("id") if items else None
             plan = await _find_plan_by_price(session, price_id)
             existing = await _find_subscription_by_provider_id(session, sub_id)
+            org_id = str(existing.organization_id) if existing else None
+            if org_id is None:
+                by_customer = await _find_subscription_by_customer(session, customer_id)
+                org_id = str(by_customer.organization_id) if by_customer else None
             status = obj.get("status") or "active"
             if event_type == "customer.subscription.deleted":
                 status = "canceled"
             await _get_or_create_subscription(
                 session,
+                organization_id=org_id,
                 user_id=str(existing.user_id) if existing else None,
                 provider_subscription_id=sub_id,
-                provider_customer_id=obj.get("customer"),
+                provider_customer_id=customer_id,
                 status=status,
                 period_start=_dt_from_unix(obj.get("current_period_start")),
                 period_end=_dt_from_unix(obj.get("current_period_end")),
@@ -280,7 +313,13 @@ class RazorpayProvider(PaymentProvider):
         )
 
     async def create_checkout_session(
-        self, *, plan: Plan, user: User, success_url: str, cancel_url: str
+        self,
+        *,
+        plan: Plan,
+        organization: Organization,
+        user: User,
+        success_url: str,
+        cancel_url: str,
     ) -> dict[str, Any]:
         plan_id = plan.provider_plan_id or settings.RAZORPAY_PLAN_ID
         if not plan_id:
@@ -296,7 +335,11 @@ class RazorpayProvider(PaymentProvider):
                     "customer_notify": 1,
                     "quantity": 1,
                     "total_count": 12,
-                    "notes": {"user_id": str(user.id), "plan_slug": plan.slug},
+                    "notes": {
+                        "organization_id": str(organization.id),
+                        "plan_slug": plan.slug,
+                        "user_id": str(user.id),
+                    },
                 }
             )
 
@@ -350,17 +393,18 @@ class RazorpayProvider(PaymentProvider):
         }
         status = status_map.get(event_type)
         notes = entity.get("notes", {}) or {}
-        user_id = notes.get("user_id")
+        organization_id = notes.get("organization_id")
 
         if sub_id:
             existing = await _find_subscription_by_provider_id(session, sub_id)
             if existing and status:
                 existing.status = status
                 session.add(existing)
-            elif existing is None and user_id:
+            elif existing is None and organization_id:
                 await _get_or_create_subscription(
                     session,
-                    user_id=str(user_id),
+                    organization_id=str(organization_id),
+                    user_id=notes.get("user_id"),
                     provider_subscription_id=sub_id,
                     provider_customer_id=entity.get("customer_id"),
                     status=status or "active",

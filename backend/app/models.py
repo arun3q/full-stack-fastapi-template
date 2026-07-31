@@ -9,6 +9,18 @@ ROLE_USER = "user"
 ROLE_STAFF = "staff"
 ROLE_ADMIN = "admin"
 
+# Organization member roles (per-tenant)
+ORG_ROLE_OWNER = "owner"
+ORG_ROLE_ADMIN = "admin"
+ORG_ROLE_MEMBER = "member"
+ORG_ROLE_VIEWER = "viewer"
+
+# Invitation statuses
+INVITE_PENDING = "pending"
+INVITE_ACCEPTED = "accepted"
+INVITE_DECLINED = "declined"
+INVITE_EXPIRED = "expired"
+
 
 def get_datetime_utc() -> datetime:
     return datetime.now(UTC)
@@ -70,6 +82,9 @@ class User(UserBase, table=True):
         back_populates="user", cascade_delete=True
     )
     subscriptions: list[Subscription] = Relationship(back_populates="user")
+    memberships: list[OrganizationMember] = Relationship(
+        back_populates="user", cascade_delete=True
+    )
 
 
 # Properties to return via API, id is always required
@@ -89,6 +104,138 @@ class UserAccess(SQLModel):
     is_verified: bool
     plan: PlanPublic | None = None
     features: list[str]
+
+
+# Organizations / multi-tenancy
+class Organization(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255)
+    slug: str = Field(unique=True, index=True, max_length=100)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    members: list[OrganizationMember] = Relationship(
+        back_populates="organization", cascade_delete=True
+    )
+    invites: list[OrganizationInvite] = Relationship(
+        back_populates="organization", cascade_delete=True
+    )
+    items: list[Item] = Relationship(back_populates="organization")
+    subscriptions: list[Subscription] = Relationship(back_populates="organization")
+
+
+class OrganizationCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+class OrganizationUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class OrganizationPublic(SQLModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    created_at: datetime | None = None
+
+
+class OrganizationsPublic(SQLModel):
+    data: list[OrganizationPublic]
+    count: int
+
+
+class MyOrganizationPublic(OrganizationPublic):
+    role: str
+
+
+class OrganizationMember(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_organization_member"),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    organization_id: uuid.UUID = Field(
+        foreign_key="organization.id", nullable=False, ondelete="CASCADE"
+    )
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+    )
+    role: str = Field(default=ORG_ROLE_MEMBER, max_length=30)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    organization: Organization | None = Relationship(back_populates="members")
+    user: User | None = Relationship(back_populates="memberships")
+
+
+class OrganizationMemberPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    email: str | None = None
+    full_name: str | None = None
+    role: str
+    created_at: datetime | None = None
+
+
+class OrganizationMembersPublic(SQLModel):
+    data: list[OrganizationMemberPublic]
+    count: int
+
+
+class OrganizationInvite(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    organization_id: uuid.UUID = Field(
+        foreign_key="organization.id", nullable=False, ondelete="CASCADE"
+    )
+    email: EmailStr = Field(index=True, max_length=255)
+    role: str = Field(default=ORG_ROLE_MEMBER, max_length=30)
+    token: str = Field(unique=True, index=True, max_length=255)
+    invited_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    status: str = Field(default=INVITE_PENDING, max_length=20)
+    expires_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    organization: Organization | None = Relationship(back_populates="invites")
+
+
+class OrganizationInviteCreate(SQLModel):
+    email: EmailStr
+    role: str = Field(default=ORG_ROLE_MEMBER, max_length=30)
+
+
+class OrganizationInvitePublic(SQLModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    email: str
+    role: str
+    status: str
+    created_at: datetime | None = None
+
+
+class OrganizationInvitesPublic(SQLModel):
+    data: list[OrganizationInvitePublic]
+    count: int
+
+
+class PublicConfig(SQLModel):
+    project_name: str
+    support_email: str | None = None
+
+
+class VerifyEmailRequest(SQLModel):
+    token: str
+
+
+class ResendVerificationEmail(SQLModel):
+    email: EmailStr
 
 
 class OAuthAccount(SQLModel, table=True):
@@ -131,6 +278,8 @@ class Plan(SQLModel, table=True):
     provider_plan_id: str | None = Field(default=None, max_length=255)
     is_active: bool = True
     features: str | None = Field(default=None, max_length=2000)
+    # JSON string, e.g. {"max_items": 5, "max_seats": 1}
+    quotas: str | None = Field(default=None, max_length=2000)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -148,6 +297,7 @@ class PlanCreate(SQLModel):
     provider_plan_id: str | None = Field(default=None, max_length=255)
     is_active: bool = True
     features: str | None = Field(default=None, max_length=2000)
+    quotas: str | None = Field(default=None, max_length=2000)
 
 
 class PlanPublic(SQLModel):
@@ -160,6 +310,7 @@ class PlanPublic(SQLModel):
     billing_interval: str
     is_active: bool
     features: str | None = None
+    quotas: str | None = None
 
 
 class PlansPublic(SQLModel):
@@ -169,8 +320,11 @@ class PlansPublic(SQLModel):
 
 class Subscription(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(
-        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+    organization_id: uuid.UUID | None = Field(
+        default=None, foreign_key="organization.id", ondelete="CASCADE"
+    )
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="CASCADE"
     )
     plan_id: uuid.UUID | None = Field(
         default=None, foreign_key="plan.id", ondelete="RESTRICT"
@@ -195,6 +349,7 @@ class Subscription(SQLModel, table=True):
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     user: User | None = Relationship(back_populates="subscriptions")
+    organization: Organization | None = Relationship(back_populates="subscriptions")
     plan: Plan | None = Relationship(back_populates="subscriptions")
 
 
@@ -260,10 +415,14 @@ class Item(ItemBase, table=True):
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    organization_id: uuid.UUID | None = Field(
+        default=None, foreign_key="organization.id", ondelete="CASCADE"
+    )
     owner_id: uuid.UUID = Field(
         foreign_key="user.id", nullable=False, ondelete="CASCADE"
     )
     owner: User | None = Relationship(back_populates="items")
+    organization: Organization | None = Relationship(back_populates="items")
 
 
 # Properties to return via API, id is always required

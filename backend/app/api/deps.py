@@ -3,17 +3,28 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import security
 from app.core.access import billing_enabled, get_active_plan, is_admin, is_staff
 from app.core.config import settings
 from app.core.db import async_session_factory
-from app.models import TokenPayload, User
+from app.core.orgs import (
+    ensure_personal_organization,
+    find_membership,
+    has_permission,
+)
+from app.models import (
+    Organization,
+    OrganizationMember,
+    TokenPayload,
+    User,
+)
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -63,6 +74,49 @@ async def get_current_user(session: SessionDep, token: TokenDep) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+async def get_current_organization(
+    session: SessionDep,
+    current_user: CurrentUser,
+    request: Request,
+) -> Organization:
+    """Resolve the active tenant.
+
+    Uses the ``X-Organization-ID`` header when provided (validated against the
+    user's memberships), otherwise falls back to the user's most recent
+    membership (their personal organization).
+    """
+    requested = request.headers.get("X-Organization-ID")
+    membership: OrganizationMember | None = None
+    if requested:
+        try:
+            org_uuid = uuid.UUID(requested)
+        except ValueError:
+            org_uuid = None
+        if org_uuid is not None:
+            membership = await find_membership(
+                session, organization_id=org_uuid, user_id=current_user.id
+            )
+    if membership is None:
+        membership = (
+            await session.exec(
+                select(OrganizationMember)
+                .where(OrganizationMember.user_id == current_user.id)
+                .order_by(col(OrganizationMember.created_at).desc())
+            )
+        ).first()
+    if membership is None:
+        created_org = await ensure_personal_organization(session, current_user)
+        await session.commit()
+        return created_org
+    active_org = await session.get(Organization, membership.organization_id)
+    if active_org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return active_org
+
+
+CurrentOrg = Annotated[Organization, Depends(get_current_organization)]
+
+
 async def get_current_active_superuser(current_user: CurrentUser) -> User:
     if not is_admin(current_user):
         raise HTTPException(
@@ -72,7 +126,7 @@ async def get_current_active_superuser(current_user: CurrentUser) -> User:
 
 
 def require_roles(*roles: str) -> Callable[..., Awaitable[User]]:
-    """Require the current user to hold one of the given roles.
+    """Require the current user to hold one of the given global roles.
 
     Admins and superusers always pass. Example: ``require_roles("staff")``.
     """
@@ -88,18 +142,46 @@ def require_roles(*roles: str) -> Callable[..., Awaitable[User]]:
     return _dependency
 
 
+def require_org_permission(permission: str) -> Callable[..., Awaitable[User]]:
+    """Require the given permission on the active organization.
+
+    Example: ``require_org_permission("member:invite")``.
+    """
+
+    async def _dependency(
+        session: SessionDep,
+        current_user: CurrentUser,
+        current_org: CurrentOrg,
+    ) -> User:
+        membership = await find_membership(
+            session, organization_id=current_org.id, user_id=current_user.id
+        )
+        role = membership.role if membership else ""
+        if not has_permission(role, permission):
+            raise HTTPException(
+                status_code=403, detail=f"Missing permission: {permission}"
+            )
+        return current_user
+
+    return _dependency
+
+
 def require_plan(*plan_slugs: str) -> Callable[..., Awaitable[User]]:
-    """Require the current user to hold an active subscription to a plan.
+    """Require the active organization to hold a subscription to a plan.
 
     Admins/staff always pass. When no payment provider is configured the gate
     is disabled (``require_plan`` passes for everyone). Example:
     ``require_plan("pro", "business", "enterprise")``.
     """
 
-    async def _dependency(session: SessionDep, current_user: CurrentUser) -> User:
+    async def _dependency(
+        session: SessionDep,
+        current_user: CurrentUser,
+        current_org: CurrentOrg,
+    ) -> User:
         if not billing_enabled() or is_staff(current_user):
             return current_user
-        plan = await get_active_plan(session, current_user.id)
+        plan = await get_active_plan(session, current_org.id)
         if plan and plan.slug in plan_slugs:
             return current_user
         raise HTTPException(

@@ -107,7 +107,7 @@ def generate_password_reset_token(email: str) -> str:
     expires = now + delta
     exp = expires.timestamp()
     encoded_jwt = jwt.encode(
-        {"exp": exp, "nbf": now, "sub": email},
+        {"exp": exp, "nbf": now, "sub": email, "type": "password_reset"},
         settings.SECRET_KEY,
         algorithm=security.ALGORITHM,
     )
@@ -119,6 +119,67 @@ def verify_password_reset_token(token: str) -> str | None:
         decoded_token = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
         )
+        if decoded_token.get("type") != "password_reset":
+            return None
         return str(decoded_token["sub"])
     except InvalidTokenError:
         return None
+
+
+def generate_verify_email_token(email: str) -> str:
+    delta = timedelta(hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS)
+    now = datetime.now(UTC)
+    expires = now + delta
+    exp = expires.timestamp()
+    encoded_jwt = jwt.encode(
+        {"exp": exp, "nbf": now, "sub": email, "type": "verify_email"},
+        settings.SECRET_KEY,
+        algorithm=security.ALGORITHM,
+    )
+    return encoded_jwt
+
+
+def verify_email_token(token: str) -> str | None:
+    try:
+        decoded_token = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
+        )
+        if decoded_token.get("type") != "verify_email":
+            return None
+        return str(decoded_token["sub"])
+    except InvalidTokenError:
+        return None
+
+
+def generate_verify_email_data(email_to: str, token: str) -> EmailData:
+    project_name = settings.PROJECT_NAME
+    subject = f"{project_name} - Verify your email"
+    link = f"{settings.FRONTEND_HOST}/verify-email?token={token}"
+    html_content = render_email_template(
+        template_name="verify_email.html",
+        context={
+            "project_name": settings.PROJECT_NAME,
+            "email": email_to,
+            "link": link,
+            "valid_hours": settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS,
+        },
+    )
+    return EmailData(html_content=html_content, subject=subject)
+
+
+def generate_organization_invite_email(
+    *, org_name: str, inviter_name: str, link: str
+) -> EmailData:
+    project_name = settings.PROJECT_NAME
+    subject = f"{project_name} - You're invited to {org_name}"
+    html_content = render_email_template(
+        template_name="organization_invite.html",
+        context={
+            "project_name": settings.PROJECT_NAME,
+            "org_name": org_name,
+            "inviter_name": inviter_name,
+            "link": link,
+            "valid_hours": settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS * 24,
+        },
+    )
+    return EmailData(html_content=html_content, subject=subject)

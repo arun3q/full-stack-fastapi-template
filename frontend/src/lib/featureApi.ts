@@ -33,6 +33,40 @@ export type UserAccess = {
   features: string[]
 }
 
+export type PublicConfig = {
+  project_name: string
+  support_email: string | null
+}
+
+export type OrganizationPublic = {
+  id: string
+  name: string
+  slug: string
+  created_at: string | null
+}
+
+export type MyOrganizationPublic = OrganizationPublic & {
+  role: string
+}
+
+export type OrganizationMemberPublic = {
+  id: string
+  user_id: string
+  email: string | null
+  full_name: string | null
+  role: string
+  created_at: string | null
+}
+
+export type OrganizationInvitePublic = {
+  id: string
+  organization_id: string
+  email: string
+  role: string
+  status: string
+  created_at: string | null
+}
+
 export type ChatMessageInput = {
   role: string
   content: string
@@ -40,9 +74,24 @@ export type ChatMessageInput = {
 
 type ApiErrorBody = { detail?: string }
 
+const ORG_KEY = "active_org_id"
+
+export function getActiveOrgId(): string | null {
+  return localStorage.getItem(ORG_KEY)
+}
+
+export function setActiveOrgId(id: string | null): void {
+  if (id) localStorage.setItem(ORG_KEY, id)
+  else localStorage.removeItem(ORG_KEY)
+}
+
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem(TOKEN_KEY)
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  const orgId = getActiveOrgId()
+  if (orgId) headers["X-Organization-ID"] = orgId
+  return headers
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -106,6 +155,75 @@ export const featureApi = {
       "/ai/health",
       { method: "GET" },
     ),
+
+  publicConfig: () =>
+    request<PublicConfig>("/public/config", { method: "GET" }),
+
+  organizations: () =>
+    request<{ data: MyOrganizationPublic[]; count: number }>(
+      "/organizations/",
+      {
+        method: "GET",
+      },
+    ),
+
+  createOrganization: (name: string) =>
+    request<OrganizationPublic>("/organizations/", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  updateOrganization: (orgId: string, name: string) =>
+    request<OrganizationPublic>(`/organizations/${orgId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  organizationMembers: (orgId: string) =>
+    request<{ data: OrganizationMemberPublic[]; count: number }>(
+      `/organizations/${orgId}/members`,
+      { method: "GET" },
+    ),
+
+  organizationInvites: (orgId: string) =>
+    request<{ data: OrganizationInvitePublic[]; count: number }>(
+      `/organizations/${orgId}/invites`,
+      { method: "GET" },
+    ),
+
+  inviteMember: (orgId: string, email: string, role = "member") =>
+    request<OrganizationInvitePublic>(`/organizations/${orgId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    }),
+
+  acceptInvite: (token: string) =>
+    request<{ message: string }>(`/organizations/invites/${token}/accept`, {
+      method: "POST",
+    }),
+
+  changeMemberRole: (orgId: string, userId: string, role: string) =>
+    request<OrganizationMemberPublic>(
+      `/organizations/${orgId}/members/${userId}?role=${encodeURIComponent(role)}`,
+      { method: "PATCH" },
+    ),
+
+  removeMember: (orgId: string, userId: string) =>
+    request<{ message: string }>(`/organizations/${orgId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
+  verifyEmail: (token: string) =>
+    request<{ message: string }>("/users/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
+  resendVerificationEmail: (email: string) =>
+    request<{ message: string }>("/users/verify-email/resend", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
 }
 
 export type StreamChatOptions = {

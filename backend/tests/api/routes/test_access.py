@@ -6,7 +6,13 @@ from sqlmodel import select
 
 from app import crud
 from app.core.config import settings
-from app.models import Plan, Subscription, User, UserCreate
+from app.models import (
+    OrganizationMember,
+    Plan,
+    Subscription,
+    User,
+    UserCreate,
+)
 from tests.utils.user import user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
@@ -28,6 +34,15 @@ def _login(client: TestClient, email: str, password: str) -> dict[str, str]:
 async def _subscribe(db: AsyncSession, email: str, slug: str = "pro") -> None:
     user = (await db.exec(select(User).where(User.email == email))).first()
     assert user is not None
+    membership = (
+        await db.exec(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.role == "owner",
+            )
+        )
+    ).first()
+    assert membership is not None
     plan = (await db.exec(select(Plan).where(Plan.slug == slug))).first()
     if plan is None:
         plan = Plan(
@@ -39,7 +54,7 @@ async def _subscribe(db: AsyncSession, email: str, slug: str = "pro") -> None:
         db.add(plan)
         await db.flush()
     subscription = Subscription(
-        user_id=user.id,
+        organization_id=membership.organization_id,
         plan_id=plan.id,
         provider="stripe",
         status="active",

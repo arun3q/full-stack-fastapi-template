@@ -89,7 +89,7 @@ async def send_email_background(
         subject=subject,
         html_content=html_content,
     )
-    if job_id is None:
+    if job_id is None and settings.emails_enabled:
         send_email(email_to=email_to, subject=subject, html_content=html_content)
 
 

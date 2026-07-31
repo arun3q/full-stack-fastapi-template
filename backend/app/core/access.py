@@ -1,16 +1,21 @@
 """Role, plan-tier and feature-access helpers.
 
-User hierarchy:
+Global user hierarchy:
     user  <  staff  <  admin == superuser
+
+Per-tenant roles (see ``core/orgs.py``):
+    viewer  <  member  <  admin  <  owner
 
 Plans (billing tiers):
     free  <  pro  <  business  <  enterprise
 
 When ``PAYMENT_PROVIDER`` is ``none`` (the default) plan gates are disabled and
 every authenticated user gets full access. Once a payment provider is
-configured, ``require_plan(...)`` and the item quota are enforced.
+configured, ``require_plan(...)`` and quotas are enforced against the active
+organization's subscription.
 """
 
+import json
 from typing import Any
 
 from sqlmodel import col, select
@@ -28,7 +33,6 @@ from app.models import (
 AI_PLANS = ("pro", "business", "enterprise")
 UNLIMITED_PLANS = ("business", "enterprise")
 FREE_PLAN_SLUG = "free"
-MAX_FREE_ITEMS = 5
 
 
 def is_admin(user: User) -> bool:
@@ -43,13 +47,25 @@ def billing_enabled() -> bool:
     return settings.PAYMENT_PROVIDER != "none"
 
 
-async def get_active_plan(session: AsyncSession, user_id: Any) -> Plan | None:
-    """Return the user's current active/trialing subscription plan, if any."""
+def plan_quota(plan: Plan | None, key: str, default: int = 0) -> int:
+    """Read an integer quota from a plan's JSON ``quotas`` (0 = unlimited)."""
+    if plan is None or not plan.quotas:
+        return default
+    try:
+        data: dict[str, Any] = json.loads(plan.quotas)
+        value = data.get(key, default)
+        return int(value) if isinstance(value, (int, float)) else default
+    except Exception:
+        return default
+
+
+async def get_active_plan(session: AsyncSession, organization_id: Any) -> Plan | None:
+    """Return the active organization's current subscription plan, if any."""
     subscription = (
         await session.exec(
             select(Subscription)
             .where(
-                Subscription.user_id == user_id,
+                Subscription.organization_id == organization_id,
                 col(Subscription.status).in_(["active", "trialing", "past_due"]),
             )
             .order_by(col(Subscription.created_at).desc())

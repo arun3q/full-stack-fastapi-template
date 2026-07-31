@@ -3,6 +3,7 @@ import uuid
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.orgs import ensure_personal_organization
 from app.core.security import get_password_hash, verify_password
 from app.models import Item, ItemCreate, User, UserCreate, UserUpdate
 
@@ -15,6 +16,9 @@ async def create_user(*, session: AsyncSession, user_create: UserCreate) -> User
         extra["hashed_password"] = None
     db_obj = User.model_validate(user_create, update=extra)
     session.add(db_obj)
+    await session.flush()
+    # Every user gets a personal organization (tenant) out of the box
+    await ensure_personal_organization(session, db_obj)
     await session.commit()
     await session.refresh(db_obj)
     return db_obj
@@ -70,9 +74,16 @@ async def authenticate(
 
 
 async def create_item(
-    *, session: AsyncSession, item_in: ItemCreate, owner_id: uuid.UUID
+    *,
+    session: AsyncSession,
+    item_in: ItemCreate,
+    owner_id: uuid.UUID,
+    organization_id: uuid.UUID | None = None,
 ) -> Item:
-    db_item = Item.model_validate(item_in, update={"owner_id": owner_id})
+    db_item = Item.model_validate(
+        item_in,
+        update={"owner_id": owner_id, "organization_id": organization_id},
+    )
     session.add(db_item)
     await session.commit()
     await session.refresh(db_item)

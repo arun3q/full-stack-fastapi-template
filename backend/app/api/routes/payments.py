@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import col, select
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentOrg, CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.jobs import enqueue_job
 from app.core.payments import PaymentError, get_payment_provider
@@ -33,11 +33,15 @@ async def read_plans(session: SessionDep) -> Any:
 
 @router.post("/checkout", response_model=dict[str, str])
 async def create_checkout(
-    *, session: SessionDep, current_user: CurrentUser, plan_id: str
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_org: CurrentOrg,
+    plan_id: str,
 ) -> Any:
     """
-    Create a checkout session for a plan. Returns ``{id, url}``; the frontend
-    redirects the user to ``url``.
+    Create a checkout session for a plan for the active organization.
+    Returns ``{id, url}``; the frontend redirects the user to ``url``.
     """
     provider = get_payment_provider()
     if provider is None:
@@ -48,6 +52,7 @@ async def create_checkout(
     try:
         session_data = await provider.create_checkout_session(
             plan=plan,
+            organization=current_org,
             user=current_user,
             success_url=f"{settings.FRONTEND_HOST}/billing?success=true",
             cancel_url=f"{settings.FRONTEND_HOST}/billing?canceled=true",
@@ -102,13 +107,13 @@ async def payments_webhook(request: Request, _session: SessionDep) -> dict[str, 
 
 
 @router.get("/subscription", response_model=SubscriptionPublic | None)
-async def read_subscription(session: SessionDep, current_user: CurrentUser) -> Any:
-    """Return the current user's most recent active subscription, if any."""
+async def read_subscription(session: SessionDep, current_org: CurrentOrg) -> Any:
+    """Return the active organization's most recent subscription, if any."""
     subscription = (
         await session.exec(
             select(Subscription)
             .where(
-                Subscription.user_id == current_user.id,
+                Subscription.organization_id == current_org.id,
                 col(Subscription.status).in_(["active", "trialing", "past_due"]),
             )
             .order_by(col(Subscription.created_at).desc())
@@ -123,15 +128,15 @@ async def read_subscription(session: SessionDep, current_user: CurrentUser) -> A
 
 
 @router.post("/subscription/cancel", response_model=Message)
-async def cancel_subscription(session: SessionDep, current_user: CurrentUser) -> Any:
-    """Cancel the current user's active subscription."""
+async def cancel_subscription(session: SessionDep, current_org: CurrentOrg) -> Any:
+    """Cancel the active organization's subscription."""
     provider = get_payment_provider()
     if provider is None:
         raise HTTPException(status_code=503, detail="No payment provider configured")
     subscription = (
         await session.exec(
             select(Subscription).where(
-                Subscription.user_id == current_user.id,
+                Subscription.organization_id == current_org.id,
                 col(Subscription.status).in_(["active", "trialing", "past_due"]),
             )
         )
@@ -152,14 +157,14 @@ async def cancel_subscription(session: SessionDep, current_user: CurrentUser) ->
 
 
 @router.post("/portal", response_model=dict[str, str])
-async def billing_portal(session: SessionDep, current_user: CurrentUser) -> Any:
+async def billing_portal(session: SessionDep, current_org: CurrentOrg) -> Any:
     """Create a billing portal session (Stripe only) and return its URL."""
     provider = get_payment_provider()
     if provider is None:
         raise HTTPException(status_code=503, detail="No payment provider configured")
     subscription = (
         await session.exec(
-            select(Subscription).where(Subscription.user_id == current_user.id)
+            select(Subscription).where(Subscription.organization_id == current_org.id)
         )
     ).first()
     if not subscription or not subscription.provider_customer_id:

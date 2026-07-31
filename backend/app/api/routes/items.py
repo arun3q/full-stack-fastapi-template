@@ -4,27 +4,38 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, select
 
-from app.api.deps import CurrentUser, SessionDep, require_roles
+from app.api.deps import (
+    CurrentOrg,
+    CurrentUser,
+    SessionDep,
+    require_org_permission,
+    require_roles,
+)
 from app.core.access import (
-    FREE_PLAN_SLUG,
-    MAX_FREE_ITEMS,
     billing_enabled,
     get_active_plan,
     is_staff,
+    plan_quota,
 )
 from app.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
 
 router = APIRouter(prefix="/items", tags=["items"])
 
+FREE_PLAN_MAX_ITEMS = 5
+
 
 @router.get("/", response_model=ItemsPublic)
 async def read_items(
-    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_org: CurrentOrg,
+    skip: int = 0,
+    limit: int = 100,
 ) -> Any:
     """
-    Retrieve items.
+    Retrieve items. Staff+ see every item; everyone else sees their
+    organization's items.
     """
-
     if is_staff(current_user):
         count_statement = select(func.count()).select_from(Item)
         count = (await session.exec(count_statement)).one()
@@ -36,12 +47,12 @@ async def read_items(
         count_statement = (
             select(func.count())
             .select_from(Item)
-            .where(Item.owner_id == current_user.id)
+            .where(Item.organization_id == current_org.id)
         )
         count = (await session.exec(count_statement)).one()
         statement = (
             select(Item)
-            .where(Item.owner_id == current_user.id)
+            .where(Item.organization_id == current_org.id)
             .order_by(col(Item.created_at).desc())
             .offset(skip)
             .limit(limit)
@@ -73,7 +84,10 @@ async def read_all_items(session: SessionDep, skip: int = 0, limit: int = 100) -
 
 @router.get("/{id}", response_model=ItemPublic)
 async def read_item(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_org: CurrentOrg,
+    id: uuid.UUID,
 ) -> Any:
     """
     Get item by ID.
@@ -81,49 +95,73 @@ async def read_item(
     item = await session.get(Item, id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
+    if not is_staff(current_user) and item.organization_id != current_org.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return item
 
 
-@router.post("/", response_model=ItemPublic)
+@router.post(
+    "/",
+    dependencies=[Depends(require_org_permission("item:create"))],
+    response_model=ItemPublic,
+)
 async def create_item(
-    *, session: SessionDep, current_user: CurrentUser, item_in: ItemCreate
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_org: CurrentOrg,
+    item_in: ItemCreate,
 ) -> Any:
     """
-    Create new item.
+    Create new item in the active organization.
     """
-    # Free-plan quota (only enforced when a payment provider is configured)
+    # Plan-driven item quota (only enforced when a payment provider is configured)
     if billing_enabled() and not is_staff(current_user):
-        plan = await get_active_plan(session, current_user.id)
-        if plan is None or plan.slug == FREE_PLAN_SLUG:
+        plan = await get_active_plan(session, current_org.id)
+        max_items = (
+            FREE_PLAN_MAX_ITEMS
+            if plan is None
+            else plan_quota(plan, "max_items", default=0)
+        )
+        if max_items > 0:
             count_statement = (
                 select(func.count())
                 .select_from(Item)
-                .where(Item.owner_id == current_user.id)
+                .where(Item.organization_id == current_org.id)
             )
             count = (await session.exec(count_statement)).one()
-            if count >= MAX_FREE_ITEMS:
+            if count >= max_items:
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        f"The free plan is limited to {MAX_FREE_ITEMS} items. "
-                        "Upgrade to Pro for unlimited items."
+                        f"Your plan is limited to {max_items} items. "
+                        "Upgrade your plan for more."
                     ),
                 )
 
-    item = Item.model_validate(item_in, update={"owner_id": current_user.id})
+    item = Item.model_validate(
+        item_in,
+        update={
+            "owner_id": current_user.id,
+            "organization_id": current_org.id,
+        },
+    )
     session.add(item)
     await session.commit()
     await session.refresh(item)
     return item
 
 
-@router.put("/{id}", response_model=ItemPublic)
+@router.put(
+    "/{id}",
+    dependencies=[Depends(require_org_permission("item:update"))],
+    response_model=ItemPublic,
+)
 async def update_item(
     *,
     session: SessionDep,
     current_user: CurrentUser,
+    current_org: CurrentOrg,
     id: uuid.UUID,
     item_in: ItemUpdate,
 ) -> Any:
@@ -133,7 +171,7 @@ async def update_item(
     item = await session.get(Item, id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
+    if not is_staff(current_user) and item.organization_id != current_org.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     update_dict = item_in.model_dump(exclude_unset=True)
     item.sqlmodel_update(update_dict)
@@ -143,9 +181,15 @@ async def update_item(
     return item
 
 
-@router.delete("/{id}")
+@router.delete(
+    "/{id}",
+    dependencies=[Depends(require_org_permission("item:delete"))],
+)
 async def delete_item(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_org: CurrentOrg,
+    id: uuid.UUID,
 ) -> Message:
     """
     Delete an item.
@@ -153,7 +197,7 @@ async def delete_item(
     item = await session.get(Item, id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
+    if not is_staff(current_user) and item.organization_id != current_org.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     await session.delete(item)
     await session.commit()

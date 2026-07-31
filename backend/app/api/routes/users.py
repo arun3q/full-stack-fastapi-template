@@ -6,6 +6,7 @@ from sqlmodel import col, delete, func, select
 
 from app import crud
 from app.api.deps import (
+    CurrentOrg,
     CurrentUser,
     SessionDep,
     get_current_active_superuser,
@@ -18,6 +19,7 @@ from app.models import (
     Item,
     Message,
     PlanPublic,
+    ResendVerificationEmail,
     UpdatePassword,
     User,
     UserAccess,
@@ -27,8 +29,14 @@ from app.models import (
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
+    VerifyEmailRequest,
 )
-from app.utils import generate_new_account_email
+from app.utils import (
+    generate_new_account_email,
+    generate_verify_email_data,
+    generate_verify_email_token,
+    verify_email_token,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -140,11 +148,13 @@ async def read_user_me(current_user: CurrentUser) -> Any:
 
 
 @router.get("/me/access", response_model=UserAccess)
-async def read_user_access(session: SessionDep, current_user: CurrentUser) -> Any:
+async def read_user_access(
+    session: SessionDep, current_user: CurrentUser, current_org: CurrentOrg
+) -> Any:
     """
     Get the current user's role, plan and resolved feature flags.
     """
-    plan = await get_active_plan(session, current_user.id)
+    plan = await get_active_plan(session, current_org.id)
     return UserAccess(
         role=current_user.role,
         is_superuser=current_user.is_superuser,
@@ -181,7 +191,54 @@ async def register_user(session: SessionDep, user_in: UserRegister) -> Any:
         )
     user_create = UserCreate.model_validate(user_in)
     user = await crud.create_user(session=session, user_create=user_create)
+    # Send an email verification link
+    if settings.emails_enabled and user.email:
+        token = generate_verify_email_token(email=str(user.email))
+        email_data = generate_verify_email_data(email_to=str(user.email), token=token)
+        await send_email_background(
+            email_to=str(user.email),
+            subject=email_data.subject,
+            html_content=email_data.html_content,
+        )
     return user
+
+
+@router.post("/verify-email", response_model=Message)
+async def verify_email(session: SessionDep, body: VerifyEmailRequest) -> Any:
+    """
+    Verify the current user's email address using a token.
+    """
+    email = verify_email_token(token=body.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    user = await crud.get_user_by_email(session=session, email=email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.is_verified:
+        return Message(message="Email already verified")
+    user.is_verified = True
+    session.add(user)
+    await session.commit()
+    return Message(message="Email verified successfully")
+
+
+@router.post("/verify-email/resend", response_model=Message)
+async def resend_verification_email(
+    session: SessionDep, body: ResendVerificationEmail
+) -> Any:
+    """
+    Resend the email verification link for a given address.
+    """
+    user = await crud.get_user_by_email(session=session, email=body.email)
+    if user and not user.is_verified and settings.emails_enabled:
+        token = generate_verify_email_token(email=str(user.email))
+        email_data = generate_verify_email_data(email_to=str(user.email), token=token)
+        await send_email_background(
+            email_to=str(user.email),
+            subject=email_data.subject,
+            html_content=email_data.html_content,
+        )
+    return Message(message="If that email is registered, a verification email was sent")
 
 
 @router.get("/{user_id}", response_model=UserPublic)

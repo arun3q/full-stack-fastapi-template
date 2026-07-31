@@ -10,11 +10,13 @@ import {
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
 import { type Item, Main } from "./Main"
+import { OrgSwitcher } from "./OrgSwitcher"
 import { User } from "./User"
 
 const baseItems: Item[] = [
-  { icon: Home, title: "Dashboard", path: "/" },
+  { icon: Home, title: "Dashboard", path: "/dashboard" },
   { icon: Briefcase, title: "Items", path: "/items" },
+  { icon: Users, title: "Members", path: "/members" },
   { icon: CreditCard, title: "Billing", path: "/billing" },
   { icon: Bot, title: "AI Chat", path: "/chat" },
 ]
@@ -32,6 +34,7 @@ export function AppSidebar() {
         <Logo variant="responsive" />
       </SidebarHeader>
       <SidebarContent>
+        <OrgSwitcher />
         <Main items={items} />
       </SidebarContent>
       <SidebarFooter>

@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 
 import { Footer } from "@/components/Common/Footer"
+import { VerifyEmailBanner } from "@/components/Common/VerifyEmailBanner"
 import AppSidebar from "@/components/Sidebar/AppSidebar"
 import {
   SidebarInset,
@@ -30,6 +31,7 @@ function Layout() {
         </header>
         <main className="flex-1 p-6 md:p-8">
           <div className="mx-auto max-w-7xl">
+            <VerifyEmailBanner />
             <Outlet />
           </div>
         </main>

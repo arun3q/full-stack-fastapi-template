@@ -436,6 +436,71 @@ reusing the existing password-reset token machinery.
 
 ---
 
+## Organizations & Multi-tenancy
+
+Every resource in the app is scoped to an **organization** (tenant).
+
+### How it works
+
+- Every user gets a **personal organization** automatically on signup
+  (`crud.create_user`), so nothing is blocked out of the box.
+- `Organization` + `OrganizationMember` (role: `owner`/`admin`/`member`/`viewer`)
+  model the tenancy; `OrganizationInvite` powers email invitations.
+- The **active tenant** is resolved by the `X-Organization-ID` header
+  (`CurrentOrg` dependency in `api/deps.py`); when absent it falls back to the
+  user's most recent membership (their personal org).
+- Items and subscriptions are tenant-scoped (`organization_id`), so data is
+  isolated between organizations.
+
+### Per-tenant permissions
+
+A permission registry in `core/orgs.py` maps each role to permissions:
+
+| Permission | Owner | Admin | Member | Viewer |
+| ---------- | :---: | :---: | :----: | :----: |
+| `org:view` | ✓ | ✓ | ✓ | ✓ |
+| `org:update` | ✓ | ✓ | | |
+| `org:delete` | ✓ | | | |
+| `member:invite` | ✓ | ✓ | | |
+| `member:manage` | ✓ | ✓ | | |
+| `member:remove` | ✓ | | | |
+| `billing:manage` | ✓ | ✓ | | |
+| `item:create` / `item:read` / `item:update` | ✓ | ✓ | ✓ | |
+| `item:read` (viewer) | | | | ✓ |
+| `item:delete` | ✓ | ✓ | | |
+
+Enforce with the `require_org_permission("member:invite")` dependency.
+
+### Invitations
+
+An admin can invite a user by email (`POST /organizations/{id}/members`); the
+invitee receives an email linking to `/invite?token=...`, and accepts it from
+their (logged-in) account. Seat quotas from the plan (`max_seats`) are enforced
+when billing is enabled.
+
+### API endpoints (all under `/api/v1/organizations/`)
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/` | My organizations |
+| POST | `/` | Create organization |
+| GET | `/{id}` | Organization detail (members) |
+| PATCH | `/{id}` | Update organization (admin+) |
+| GET | `/{id}/members` | List members |
+| POST | `/{id}/members` | Invite by email (admin+) |
+| GET | `/{id}/invites` | List pending invites |
+| PATCH | `/{id}/members/{user_id}?role=` | Change role (admin/owner) |
+| DELETE | `/{id}/members/{user_id}` | Remove member (owner) |
+| POST | `/invites/{token}/accept` | Accept an invitation |
+
+### Frontend
+
+- **Org switcher** in the sidebar (switch active org, create new orgs).
+- **Members** page — invite by email, manage roles, remove members, view invites.
+- Billing and items are org-scoped automatically.
+
+---
+
 ## API Reference
 
 Interactive API docs are available at `/api/v1/docs` (Swagger UI) and
