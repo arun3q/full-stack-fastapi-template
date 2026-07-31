@@ -1,0 +1,26 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ project_name }} - Payment past due</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; background-color: #fafbfc; font-family: Arial, Helvetica, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; padding: 40px 24px; }
+    h1 { color: #333333; font-size: 20px; }
+    p { color: #555555; font-size: 15px; line-height: 1.6; }
+    .button { display: inline-block; background: #111827; color: #ffffff !important; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-size: 15px; margin: 20px 0; }
+    .muted { color: #999999; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>{{ project_name }}</h1>
+    <p>Hi {{ owner_name }},</p>
+    <p>The payment for your <strong>{{ org_name }}</strong> subscription is past due.
+      To avoid an interruption in service, please update your payment method.</p>
+    <a class="button" href="{{ billing_url }}">Update billing</a>
+    <p class="muted">If you've already updated your payment method, you can ignore this email.</p>
+  </div>
+</body>
+</html>

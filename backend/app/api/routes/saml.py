@@ -9,6 +9,7 @@ from app.api.deps import SessionDep
 from app.core import security
 from app.core.audit import audit_event
 from app.core.config import settings
+from app.core.ratelimit import limiter
 from app.core.saml import (
     build_settings,
     metadata_xml,
@@ -34,6 +35,7 @@ async def saml_metadata() -> Response:
 
 
 @router.get("/login")
+@limiter.limit("10/minute")
 async def saml_login(request: Request) -> RedirectResponse:
     """SP-initiated login: redirect to the IdP."""
     _require_saml()
@@ -43,19 +45,31 @@ async def saml_login(request: Request) -> RedirectResponse:
 
 
 @router.post("/acs")
+@limiter.limit("10/minute")
 async def saml_acs(request: Request, session: SessionDep) -> RedirectResponse:
     """Assertion Consumer Service: validate the assertion and log the user in."""
     _require_saml()
     form = await request.form()
+    form_data = dict(form.multi_items())
+
+    # Validate RelayState if present (must point back at our frontend)
+    relay_state_raw = form_data.get("RelayState")
+    relay_state = relay_state_raw if isinstance(relay_state_raw, str) else ""
+    if relay_state and not relay_state.startswith(settings.FRONTEND_HOST):
+        raise HTTPException(status_code=400, detail="Invalid relay state")
+
+    import logging
+
     auth = OneLogin_Saml2_Auth(
-        request_data(request, post_data=dict(form.multi_items())),
+        request_data(request, post_data=form_data),
         await build_settings(),
     )
     auth.process_response()
     if auth.get_errors():
-        raise HTTPException(
-            status_code=400, detail=f"SAML error: {', '.join(auth.get_errors())}"
+        logging.getLogger(__name__).warning(
+            "SAML ACS error: %s", ", ".join(auth.get_errors())
         )
+        raise HTTPException(status_code=400, detail="SAML authentication failed")
 
     email = str(auth.get_nameid() or "").lower()
     attributes = auth.get_attributes()

@@ -183,3 +183,20 @@ def generate_organization_invite_email(
         },
     )
     return EmailData(html_content=html_content, subject=subject)
+
+
+def generate_dunning_email(
+    *, org_name: str, owner_name: str, billing_url: str
+) -> EmailData:
+    project_name = settings.PROJECT_NAME
+    subject = f"{project_name} - Payment past due for {org_name}"
+    html_content = render_email_template(
+        template_name="dunning_past_due.html",
+        context={
+            "project_name": settings.PROJECT_NAME,
+            "org_name": org_name,
+            "owner_name": owner_name,
+            "billing_url": billing_url,
+        },
+    )
+    return EmailData(html_content=html_content, subject=subject)

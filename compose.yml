@@ -154,6 +154,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL}
       - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_STORAGE=redis://redis:6379/0
       - POSTGRES_SERVER=db
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -208,6 +209,14 @@ services:
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-https.entrypoints=https
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-https.tls=true
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-https.tls.certresolver=le
+      - traefik.http.routers.${STACK_NAME?Variable not set}-backend-https.middlewares=security-headers
+
+      # Security headers (HSTS, framing, sniffing, referrer)
+      - traefik.http.middlewares.security-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.security-headers.headers.frameDeny=true
+      - traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin
 
       # Enable redirection for HTTP and HTTPS
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.middlewares=https-redirect

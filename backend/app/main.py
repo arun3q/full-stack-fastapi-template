@@ -13,7 +13,11 @@ from app.api.main import api_router
 from app.api.routes.metrics import router as metrics_router_root
 from app.core.config import settings
 from app.core.logging_config import configure_logging
-from app.core.middleware import IdempotencyMiddleware, RequestContextMiddleware
+from app.core.middleware import (
+    CSRFMiddleware,
+    IdempotencyMiddleware,
+    RequestContextMiddleware,
+)
 from app.core.ratelimit import limiter
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -72,6 +76,7 @@ if settings.all_cors_origins:
         allow_headers=["*"],
     )
 
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(RequestContextMiddleware)
 

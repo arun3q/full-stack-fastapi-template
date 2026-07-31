@@ -17,6 +17,7 @@ from app.core.jobs import (
     deliver_webhook_job,
     process_payment_event_job,
     redis_settings,
+    requeue_stale_webhook_deliveries_job,
     send_email_job,
     subscription_dunning_job,
 )
@@ -48,6 +49,7 @@ class WorkerSettings:
         cron(cast(Any, cleanup_expired_invites_job), hour=3, minute=0),
         cron(cast(Any, cleanup_revoked_sessions_job), hour=4, minute=0),
         cron(cast(Any, subscription_dunning_job), hour=9, minute=0),
+        cron(cast(Any, requeue_stale_webhook_deliveries_job), minute=15),
     ]
     redis_settings: RedisSettings = redis_settings()
     on_startup = startup

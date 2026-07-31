@@ -120,6 +120,16 @@ async def login_access_token(
             samesite="lax",
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
+        import secrets as _secrets
+
+        response.set_cookie(
+            key="csrf_token",
+            value=_secrets.token_urlsafe(32),
+            httponly=False,
+            secure=settings.ENVIRONMENT != "local",
+            samesite="lax",
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
     return Token(
         access_token=access_token,
         refresh_token=refresh_token,

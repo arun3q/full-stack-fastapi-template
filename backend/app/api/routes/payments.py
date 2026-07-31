@@ -1,10 +1,16 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import col, select
 
-from app.api.deps import CurrentOrg, CurrentUser, ReadSessionDep, SessionDep
+from app.api.deps import (
+    CurrentOrg,
+    CurrentUser,
+    ReadSessionDep,
+    SessionDep,
+    require_org_permission,
+)
 from app.core.cache import cached
 from app.core.config import settings
 from app.core.jobs import enqueue_job
@@ -37,7 +43,11 @@ async def read_plans(session: ReadSessionDep) -> Any:
     )
 
 
-@router.post("/checkout", response_model=dict[str, str])
+@router.post(
+    "/checkout",
+    dependencies=[Depends(require_org_permission("billing:manage"))],
+    response_model=dict[str, str],
+)
 async def create_checkout(
     *,
     session: SessionDep,
@@ -133,7 +143,11 @@ async def read_subscription(session: SessionDep, current_org: CurrentOrg) -> Any
     return data
 
 
-@router.post("/subscription/cancel", response_model=Message)
+@router.post(
+    "/subscription/cancel",
+    dependencies=[Depends(require_org_permission("billing:manage"))],
+    response_model=Message,
+)
 async def cancel_subscription(session: SessionDep, current_org: CurrentOrg) -> Any:
     """Cancel the active organization's subscription."""
     provider = get_payment_provider()
@@ -162,7 +176,11 @@ async def cancel_subscription(session: SessionDep, current_org: CurrentOrg) -> A
     return Message(message="Subscription canceled")
 
 
-@router.post("/portal", response_model=dict[str, str])
+@router.post(
+    "/portal",
+    dependencies=[Depends(require_org_permission("billing:manage"))],
+    response_model=dict[str, str],
+)
 async def billing_portal(session: SessionDep, current_org: CurrentOrg) -> Any:
     """Create a billing portal session and return its URL (providers that support it)."""
     provider = get_payment_provider()

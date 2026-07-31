@@ -1,10 +1,11 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core import security
 from app.core.audit import audit_event
+from app.core.ratelimit import limiter
 from app.models import (
     Message,
     TotpDisableRequest,
@@ -17,8 +18,12 @@ router = APIRouter(prefix="/auth/totp", tags=["auth"])
 
 
 @router.post("/setup", response_model=TotpSetupResponse)
+@limiter.limit("5/minute")
 async def totp_setup(
-    session: SessionDep, current_user: CurrentUser, body: TotpSetupRequest
+    request: Request,  # noqa: ARG001
+    session: SessionDep,
+    current_user: CurrentUser,
+    body: TotpSetupRequest,
 ) -> Any:
     """Begin 2FA setup: returns the secret + otpauth URL to scan."""
     verified, _ = security.verify_password(
@@ -37,8 +42,12 @@ async def totp_setup(
 
 
 @router.post("/enable", response_model=Message)
+@limiter.limit("5/minute")
 async def totp_enable(
-    session: SessionDep, current_user: CurrentUser, body: TotpEnableRequest
+    request: Request,  # noqa: ARG001
+    session: SessionDep,
+    current_user: CurrentUser,
+    body: TotpEnableRequest,
 ) -> Message:
     """Confirm a code from the authenticator app to enable 2FA."""
     if current_user.totp_secret is None:
@@ -59,8 +68,12 @@ async def totp_enable(
 
 
 @router.post("/disable", response_model=Message)
+@limiter.limit("5/minute")
 async def totp_disable(
-    session: SessionDep, current_user: CurrentUser, body: TotpDisableRequest
+    request: Request,  # noqa: ARG001
+    session: SessionDep,
+    current_user: CurrentUser,
+    body: TotpDisableRequest,
 ) -> Message:
     """Disable 2FA after verifying the current code."""
     if not current_user.totp_enabled or current_user.totp_secret is None:

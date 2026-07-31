@@ -7,6 +7,7 @@ from app.api.deps import CurrentUser, SessionDep
 from app.core import security
 from app.core.audit import audit_event
 from app.core.config import settings
+from app.core.ratelimit import limiter
 from app.crud.sessions import (
     create_session as create_session_record,
 )
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/refresh", response_model=Token)
+@limiter.limit("10/minute")
 async def refresh_access_token(
     request: Request, session: SessionDep, body: RefreshRequest
 ) -> Token:
@@ -66,6 +68,7 @@ async def refresh_access_token(
 
 
 @router.post("/logout", response_model=Message)
+@limiter.limit("10/minute")
 async def logout(
     request: Request, session: SessionDep, body: RefreshRequest
 ) -> Message:

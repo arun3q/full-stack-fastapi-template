@@ -3,7 +3,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from app.api.deps import CurrentOrg, SessionDep
+from app.api.deps import CurrentOrg, SessionDep, require_org_permission
 from app.core.api_keys import parse_scopes
 from app.crud.api_keys import (
     create_api_key as create_key,
@@ -27,7 +27,11 @@ from app.models import (
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 
 
-@router.get("/", response_model=ApiKeysPublic)
+@router.get(
+    "/",
+    dependencies=[Depends(require_org_permission("org:view"))],
+    response_model=ApiKeysPublic,
+)
 async def read_api_keys(session: SessionDep, current_org: CurrentOrg) -> Any:
     """List the active organization's API keys."""
     keys = await list_api_keys(session, current_org.id)
@@ -37,7 +41,11 @@ async def read_api_keys(session: SessionDep, current_org: CurrentOrg) -> Any:
     }
 
 
-@router.post("/", response_model=ApiKeyCreated)
+@router.post(
+    "/",
+    dependencies=[Depends(require_org_permission("billing:manage"))],
+    response_model=ApiKeyCreated,
+)
 async def create_api_key_route(
     *, session: SessionDep, current_org: CurrentOrg, body: ApiKeyCreate
 ) -> Any:
@@ -54,7 +62,11 @@ async def create_api_key_route(
     return ApiKeyCreated(**public.model_dump(), key=plaintext)
 
 
-@router.delete("/{key_id}", response_model=Message)
+@router.delete(
+    "/{key_id}",
+    dependencies=[Depends(require_org_permission("billing:manage"))],
+    response_model=Message,
+)
 async def revoke_api_key_route(
     session: SessionDep, current_org: CurrentOrg, key_id: Any
 ) -> Message:

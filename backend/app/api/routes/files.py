@@ -1,15 +1,24 @@
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from app.api.deps import CurrentOrg, CurrentUser, SessionDep
+from app.api.deps import (
+    CurrentOrg,
+    CurrentUser,
+    SessionDep,
+    require_org_permission,
+)
 from app.core.audit import record_audit
 from app.core.storage import StorageError, upload_file
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.post("/upload", response_model=dict[str, str])
+@router.post(
+    "/upload",
+    dependencies=[Depends(require_org_permission("item:create"))],
+    response_model=dict[str, str],
+)
 async def upload(
     session: SessionDep,
     current_user: CurrentUser,

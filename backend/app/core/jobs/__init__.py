@@ -17,6 +17,7 @@ from app.core.jobs.emails import send_email_background, send_email_job
 from app.core.jobs.maintenance import (
     cleanup_expired_invites_job,
     cleanup_revoked_sessions_job,
+    requeue_stale_webhook_deliveries_job,
     subscription_dunning_job,
 )
 from app.core.jobs.payments import process_payment_event_job
@@ -38,6 +39,7 @@ __all__ = [
     "cleanup_expired_invites_job",
     "cleanup_revoked_sessions_job",
     "subscription_dunning_job",
+    "requeue_stale_webhook_deliveries_job",
     "process_payment_event_job",
     "deliver_webhook_job",
     "MAX_WEBHOOK_ATTEMPTS",
