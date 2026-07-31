@@ -35,5 +35,20 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} build
-      - run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} up -d
+      - name: Build image (tagged with commit SHA)
+        run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} build
+      - name: Deploy (pull + recreate)
+        run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} up -d --pull always --force-recreate
+      - name: Wait for readiness
+        env:
+          DOMAIN: ${{ secrets.DOMAIN_STAGING }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost/api/v1/utils/ready"; then
+              echo "backend ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "backend did not become ready" >&2
+          exit 1

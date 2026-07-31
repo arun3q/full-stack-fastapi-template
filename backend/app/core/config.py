@@ -149,8 +149,12 @@ class Settings(BaseSettings):
     # the RLS policies from ops.md to be applied to the tenant tables.
     ENABLE_RLS: bool = False
 
-    # OpenTelemetry tracing (optional toggle)
+    # OpenTelemetry tracing (optional toggle). When set, spans export via OTLP.
     ENABLE_OTEL: bool = False
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
+
+    # Metrics: optional bearer token to protect /metrics (empty = open)
+    METRICS_TOKEN: str | None = None
 
     # Enterprise SAML SSO (python3-saml). Set SAML_ENABLED + IdP metadata to use.
     SAML_ENABLED: bool = False

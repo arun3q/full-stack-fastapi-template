@@ -1,0 +1,55 @@
+# Production override. Use with:
+#   docker compose -f compose.yml -f compose.prod.yml up -d
+# Adds PgBouncer (transaction pooling), a Prometheus scrape target, a strict
+# readiness probe on the backend, and a worker healthcheck.
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: ${POSTGRES_USER?Variable not set}
+      DB_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
+      DB_NAME: ${POSTGRES_DB?Variable not set}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 50
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    environment:
+      POSTGRES_SERVER: pgbouncer
+      POSTGRES_PORT: "5432"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker:
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), 2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"

@@ -1,7 +1,8 @@
 """OpenTelemetry tracing (optional toggle).
 
 When ``ENABLE_OTEL`` is true, a tracer provider is configured and every request
-gets a span. Replace the console exporter with an OTLP exporter in production.
+gets a span. Spans export via OTLP when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set,
+otherwise to the console.
 """
 
 import logging
@@ -20,14 +21,27 @@ def init_telemetry() -> None:
         return
     try:
         from opentelemetry import trace
+        from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import (
             ConsoleSpanExporter,
             SimpleSpanProcessor,
         )
 
-        provider = TracerProvider()
-        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        provider = TracerProvider(
+            resource=Resource.create({"service.name": "full-stack-fastapi-template"})
+        )
+        if settings.OTEL_EXPORTER_OTLP_ENDPOINT:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                OTLPSpanExporter,
+            )
+
+            exporter: Any = OTLPSpanExporter(
+                endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT
+            )
+        else:
+            exporter = ConsoleSpanExporter()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
         _initialized = True
         logger.info("OpenTelemetry tracing enabled")
