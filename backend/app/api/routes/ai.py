@@ -2,10 +2,11 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, require_plan
+from app.core.access import AI_PLANS
 from app.core.ai import get_ai_provider
 from app.models import ChatRequest
 
@@ -21,7 +22,10 @@ async def ai_health() -> dict[str, Any]:
     return await provider.health()
 
 
-@router.post("/chat")
+@router.post(
+    "/chat",
+    dependencies=[Depends(require_plan(*AI_PLANS))],
+)
 async def chat_stream(
     body: ChatRequest, _current_user: CurrentUser
 ) -> StreamingResponse:

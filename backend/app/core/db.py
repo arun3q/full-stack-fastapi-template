@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app import crud
 from app.core.config import settings
-from app.models import User, UserCreate
+from app.models import ROLE_ADMIN, User, UserCreate
 
 # Synchronous engine, used for Alembic migrations and CLI/pre-start scripts.
 engine = create_engine(
@@ -60,5 +60,7 @@ async def init_db(session: AsyncSession) -> None:
             email=settings.FIRST_SUPERUSER,
             password=settings.FIRST_SUPERUSER_PASSWORD,
             is_superuser=True,
+            role=ROLE_ADMIN,
+            is_verified=True,
         )
         user = await crud.create_user(session=session, user_create=user_in)

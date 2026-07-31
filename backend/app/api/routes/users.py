@@ -10,14 +10,17 @@ from app.api.deps import (
     SessionDep,
     get_current_active_superuser,
 )
+from app.core.access import get_active_plan, resolve_features
 from app.core.config import settings
 from app.core.jobs import send_email_background
 from app.core.security import get_password_hash, verify_password
 from app.models import (
     Item,
     Message,
+    PlanPublic,
     UpdatePassword,
     User,
+    UserAccess,
     UserCreate,
     UserPublic,
     UserRegister,
@@ -134,6 +137,21 @@ async def read_user_me(current_user: CurrentUser) -> Any:
     Get current user.
     """
     return current_user
+
+
+@router.get("/me/access", response_model=UserAccess)
+async def read_user_access(session: SessionDep, current_user: CurrentUser) -> Any:
+    """
+    Get the current user's role, plan and resolved feature flags.
+    """
+    plan = await get_active_plan(session, current_user.id)
+    return UserAccess(
+        role=current_user.role,
+        is_superuser=current_user.is_superuser,
+        is_verified=current_user.is_verified,
+        plan=PlanPublic.model_validate(plan) if plan else None,
+        features=resolve_features(user=current_user, plan=plan),
+    )
 
 
 @router.delete("/me", response_model=Message)

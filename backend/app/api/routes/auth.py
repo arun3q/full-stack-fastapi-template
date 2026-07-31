@@ -81,6 +81,8 @@ async def oauth_callback(
                 hashed_password=None,
                 is_active=True,
                 is_superuser=False,
+                # The provider already verified this email address
+                is_verified=True,
             )
             session.add(user)
             await session.flush()

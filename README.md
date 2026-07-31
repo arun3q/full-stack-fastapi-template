@@ -350,6 +350,92 @@ Chat*) demonstrates a full streaming client with abort/stop support.
 
 ---
 
+## User Types & Access Control
+
+### Roles
+
+Each `User` carries a `role` (`user` | `staff` | `admin`) in addition to the
+legacy `is_superuser` flag. The hierarchy is:
+
+| Role | Description | Access |
+| ---- | ----------- | ------ |
+| `user` | Default account (signup or OAuth) | Own items, profile, billing, AI (if plan allows) |
+| `staff` | Moderator / operator | Everything `user` can, plus **all items** (`GET /items/all`) |
+| `admin` / `superuser` | Administrator | Everything, plus user management and `test-email` |
+
+Admins and superusers always pass every role/plan check.
+
+### Plan tiers (billing)
+
+| Plan | Access |
+| ---- | ------ |
+| `free` | Base features, **limited to 5 items** (when billing is enabled) |
+| `pro` | Unlimited items + **AI chat** |
+| `business` | Everything in Pro + unlimited items (already in Pro) |
+| `enterprise` | Everything |
+
+When `PAYMENT_PROVIDER=none` (the default) **all gates are disabled** and every
+authenticated user gets full access — so a fresh install "just works".
+
+### Feature flags
+
+`GET /api/v1/users/me/access` returns the resolved access for the current user:
+
+```json
+{
+  "role": "user",
+  "is_superuser": false,
+  "is_verified": true,
+  "plan": { "slug": "pro", "name": "Pro", "amount_cents": 1999, "currency": "usd", "billing_interval": "month" },
+  "features": ["ai:chat", "billing", "items:create", "items:read", "items:unlimited"]
+}
+```
+
+Available feature flags:
+
+| Flag | Meaning |
+| ---- | ------- |
+| `items:create` / `items:read` | Base item access |
+| `items:unlimited` | No free-plan item limit |
+| `ai:chat` | AI chat unlocked |
+| `billing` | Billing / subscriptions |
+| `staff` / `admin` | Role capabilities |
+
+### Dependencies
+
+Reusable permission dependencies in `backend/app/api/deps.py`:
+
+```python
+# staff+ (admins pass)
+dependencies=[Depends(require_roles("staff"))]
+
+# any paid plan
+dependencies=[Depends(require_plan("pro", "business", "enterprise"))]
+```
+
+- `require_roles("staff")` — caller must be `staff` (admins/superusers pass).
+- `require_plan("pro", ...)` — caller must hold an **active** subscription to one
+  of the given plan slugs; admins/staff pass; disabled when billing is off.
+
+### How gates are wired
+
+| Endpoint | Gate |
+| -------- | ---- |
+| `GET /items/` | Staff+ see all items; others see their own |
+| `GET /items/all` | `require_roles("staff")` |
+| `POST /items/` | Free-plan quota (5 items) when billing is enabled |
+| `POST /ai/chat` | `require_plan("pro", "business", "enterprise")` |
+| `/users/*` admin routes | `get_current_active_superuser` (admin role or superuser) |
+
+### Email verification
+
+Users carry an `is_verified` flag. OAuth-created users are verified automatically
+(the provider confirms the email). Admins can set `is_verified` and `role` when
+creating/updating users. Extend it with a self-serve email-verification flow by
+reusing the existing password-reset token machinery.
+
+---
+
 ## API Reference
 
 Interactive API docs are available at `/api/v1/docs` (Swagger UI) and
@@ -363,6 +449,7 @@ Interactive API docs are available at `/api/v1/docs` (Swagger UI) and
 | POST | `/api/v1/login/test-token` | Validate the current token |
 | POST | `/api/v1/users/signup` | Public registration |
 | GET/PATCH/DELETE | `/api/v1/users/me` | Current user |
+| GET | `/api/v1/users/me/access` | Current user's role, plan & feature flags |
 | GET/POST/PATCH/DELETE | `/api/v1/users/` | Admin user management |
 | POST | `/api/v1/password-recovery/{email}` | Send reset email |
 | POST | `/api/v1/reset-password/` | Reset password with token |
@@ -374,8 +461,9 @@ Interactive API docs are available at `/api/v1/docs` (Swagger UI) and
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| GET | `/api/v1/items/` | List items (owner-scoped) |
-| POST | `/api/v1/items/` | Create item |
+| GET | `/api/v1/items/` | List items (owner-scoped; staff+ see all) |
+| GET | `/api/v1/items/all` | List all items (staff+ only) |
+| POST | `/api/v1/items/` | Create item (free plan limited to 5 when billing is on) |
 | GET | `/api/v1/items/{id}` | Get item |
 | PUT | `/api/v1/items/{id}` | Update item |
 | DELETE | `/api/v1/items/{id}` | Delete item |

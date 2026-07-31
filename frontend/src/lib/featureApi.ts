@@ -25,6 +25,14 @@ export type SubscriptionPublic = {
   cancel_at_period_end: boolean
 }
 
+export type UserAccess = {
+  role: string
+  is_superuser: boolean
+  is_verified: boolean
+  plan: PlanPublic | null
+  features: string[]
+}
+
 export type ChatMessageInput = {
   role: string
   content: string
@@ -66,6 +74,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const featureApi = {
   authProviders: () =>
     request<{ providers: string[] }>("/auth/providers", { method: "GET" }),
+
+  userAccess: () => request<UserAccess>("/users/me/access", { method: "GET" }),
 
   plans: () =>
     request<{ data: PlanPublic[]; count: number }>("/payments/plans", {

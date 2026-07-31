@@ -39,6 +39,13 @@ function ChatPage() {
     queryFn: featureApi.aiHealth,
   })
 
+  const accessQuery = useQuery({
+    queryKey: ["userAccess"],
+    queryFn: featureApi.userAccess,
+  })
+
+  const canUseAi = accessQuery.data?.features.includes("ai:chat") ?? true
+
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -47,7 +54,7 @@ function ChatPage() {
 
   const sendMessage = async () => {
     const content = input.trim()
-    if (!content || isStreaming) return
+    if (!content || isStreaming || !canUseAi) return
 
     setInput("")
     const userMessage: ChatMessage = { role: "user", content }
@@ -123,10 +130,20 @@ function ChatPage() {
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
               <Bot className="size-10 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                {provider
-                  ? `Ask anything, streaming replies from ${provider}.`
-                  : "AI is not configured. Set AI_PROVIDER and an API key in your environment."}
+                {!canUseAi
+                  ? "AI chat requires a paid plan. Upgrade from the Billing page to unlock it."
+                  : provider
+                    ? `Ask anything, streaming replies from ${provider}.`
+                    : "AI is not configured. Set AI_PROVIDER and an API key in your environment."}
               </p>
+              {!canUseAi ? (
+                <a
+                  href="/billing"
+                  className="text-sm font-medium text-primary underline underline-offset-4"
+                >
+                  View plans
+                </a>
+              ) : null}
             </div>
           ) : (
             messages.map((message, index) => (
@@ -189,7 +206,11 @@ function ChatPage() {
             <Square className="size-4" />
           </Button>
         ) : (
-          <Button onClick={sendMessage} data-testid="chat-send">
+          <Button
+            onClick={sendMessage}
+            disabled={!canUseAi}
+            data-testid="chat-send"
+          >
             <Send className="size-4" />
           </Button>
         )}

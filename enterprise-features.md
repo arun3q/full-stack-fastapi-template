@@ -155,6 +155,31 @@ implemented as CSS-variable overrides in `frontend/src/index.css`
 (`data-accent` attribute on `<html>`), so adding a brand color is a few oklch
 values.
 
+## 7. Roles, plans & feature access (RBAC)
+
+Users have a `role` (`user` | `staff` | `admin`) plus the legacy `is_superuser`
+flag. Plan tiers (free/pro/business/enterprise) gate features through reusable
+dependencies in `backend/app/api/deps.py`:
+
+- `require_roles("staff")` — staff+ only (admins pass).
+- `require_plan("pro", "business", "enterprise")` — requires an **active**
+  subscription to one of the given plans; admins/staff pass; **disabled when
+  `PAYMENT_PROVIDER=none`** (default), so a fresh install is ungated.
+
+Wired gates:
+
+| Endpoint | Gate |
+| -------- | ---- |
+| `GET /items/` | staff+ see all items, others only their own |
+| `GET /items/all` | `require_roles("staff")` |
+| `POST /items/` | free plan limited to `MAX_FREE_ITEMS` (5) |
+| `POST /ai/chat` | `require_plan("pro", "business", "enterprise")` |
+| `/users/*` admin routes | `get_current_active_superuser` (admin role or superuser) |
+
+`GET /api/v1/users/me/access` returns the resolved `{role, is_verified, plan,
+features}` for the current user so the frontend can render conditionally.
+Helper logic lives in `backend/app/core/access.py`.
+
 ## Docker Compose
 
 `compose.yml` gained two services:

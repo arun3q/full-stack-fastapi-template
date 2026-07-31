@@ -5,6 +5,10 @@ from pydantic import EmailStr
 from sqlalchemy import DateTime, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
+ROLE_USER = "user"
+ROLE_STAFF = "staff"
+ROLE_ADMIN = "admin"
+
 
 def get_datetime_utc() -> datetime:
     return datetime.now(UTC)
@@ -15,6 +19,8 @@ class UserBase(SQLModel):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     is_active: bool = True
     is_superuser: bool = False
+    role: str = Field(default=ROLE_USER, max_length=30)
+    is_verified: bool = False
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -34,6 +40,8 @@ class UserUpdate(SQLModel):
     email: EmailStr | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     is_superuser: bool | None = None
+    role: str | None = Field(default=None, max_length=30)
+    is_verified: bool | None = None
     full_name: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
@@ -73,6 +81,14 @@ class UserPublic(UserBase):
 class UsersPublic(SQLModel):
     data: list[UserPublic]
     count: int
+
+
+class UserAccess(SQLModel):
+    role: str
+    is_superuser: bool
+    is_verified: bool
+    plan: PlanPublic | None = None
+    features: list[str]
 
 
 class OAuthAccount(SQLModel, table=True):
