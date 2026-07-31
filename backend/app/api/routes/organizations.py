@@ -2,16 +2,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, require_org_permission
 from app.core.access import billing_enabled, get_active_plan, plan_quota
 from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.jobs import send_email_background
 from app.core.notifications import notify
 from app.core.orgs import ORG_ROLE_MEMBER, ORG_ROLE_OWNER, has_permission
+from app.crud.api_keys import list_api_keys, revoke_api_key
 from app.crud.organizations import (
     add_member,
     count_members,
@@ -28,13 +29,18 @@ from app.crud.organizations import (
     update_member_role,
     update_organization,
 )
+from app.crud.webhooks import list_webhooks, update_webhook
 from app.models import (
     INVITE_ACCEPTED,
+    INVITE_CANCELED,
+    INVITE_DECLINED,
     INVITE_EXPIRED,
     INVITE_PENDING,
+    Item,
     Message,
     MyOrganizationPublic,
     OrganizationCreate,
+    OrganizationInvite,
     OrganizationInviteCreate,
     OrganizationInvitePublic,
     OrganizationInvitesPublic,
@@ -43,6 +49,8 @@ from app.models import (
     OrganizationMembersPublic,
     OrganizationPublic,
     OrganizationUpdate,
+    Subscription,
+    UsageEvent,
     User,
 )
 from app.utils import generate_organization_invite_email
@@ -383,3 +391,302 @@ async def remove_member_route(
         raise HTTPException(status_code=403, detail="Cannot remove the owner")
     await session.commit()
     return Message(message="Member removed")
+
+
+@router.post(
+    "/{organization_id}/suspend",
+    dependencies=[Depends(require_org_permission("org:update"))],
+    response_model=OrganizationPublic,
+)
+async def suspend_organization(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+) -> Any:
+    """Suspend an organization: revokes API keys and deactivates webhooks."""
+    org = await get_organization(session, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    org.is_active = False
+    session.add(org)
+    for api_key in await list_api_keys(session, organization_id):
+        await revoke_api_key(session, api_key)
+    for webhook in await list_webhooks(session, organization_id):
+        await update_webhook(session, webhook, is_active=False)
+    await record_audit(
+        session,
+        action="org.suspend",
+        user_id=current_user.id,
+        organization_id=org.id,
+        entity_type="organization",
+        entity_id=str(org.id),
+    )
+    await session.commit()
+    await session.refresh(org)
+    return org
+
+
+@router.delete(
+    "/{organization_id}",
+    dependencies=[Depends(require_org_permission("org:delete"))],
+    response_model=Message,
+)
+async def delete_organization(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+) -> Message:
+    """Delete an organization and all tenant data (GDPR)."""
+    org = await get_organization(session, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    await record_audit(
+        session,
+        action="org.delete",
+        user_id=current_user.id,
+        organization_id=org.id,
+        entity_type="organization",
+        entity_id=str(org.id),
+        detail={"name": org.name},
+    )
+    await session.delete(org)
+    await session.commit()
+    return Message(message="Organization deleted")
+
+
+@router.get(
+    "/{organization_id}/export",
+    dependencies=[Depends(require_org_permission("org:view"))],
+)
+async def export_organization(
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Export all tenant data as JSON (GDPR data portability)."""
+    org = await get_organization(session, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    members = await list_members(session, organization_id)
+    member_data = []
+    for membership in members:
+        user = await session.get(User, membership.user_id)
+        member_data.append(
+            {
+                "id": str(membership.user_id),
+                "email": user.email if user else None,
+                "full_name": user.full_name if user else None,
+                "role": membership.role,
+            }
+        )
+
+    items = (
+        await session.exec(select(Item).where(Item.organization_id == organization_id))
+    ).all()
+    subscription = (
+        await session.exec(
+            select(Subscription).where(Subscription.organization_id == organization_id)
+        )
+    ).first()
+    usage = (
+        await session.exec(
+            select(UsageEvent).where(UsageEvent.organization_id == organization_id)
+        )
+    ).all()
+
+    from app.core.audit import record_audit
+
+    await record_audit(
+        session,
+        action="org.export",
+        user_id=current_user.id,
+        organization_id=org.id,
+        entity_type="organization",
+        entity_id=str(org.id),
+    )
+    await session.commit()
+
+    return {
+        "organization": {"id": str(org.id), "name": org.name, "slug": org.slug},
+        "members": member_data,
+        "items": [
+            {
+                "id": str(item.id),
+                "title": item.title,
+                "description": item.description,
+                "created_at": item.created_at,
+            }
+            for item in items
+        ],
+        "subscription": (
+            {
+                "id": str(subscription.id),
+                "status": subscription.status,
+                "plan_id": str(subscription.plan_id) if subscription.plan_id else None,
+            }
+            if subscription
+            else None
+        ),
+        "usage_events": [
+            {
+                "meter": u.meter,
+                "amount": u.amount,
+                "created_at": u.created_at,
+            }
+            for u in usage
+        ],
+    }
+
+
+@router.delete(
+    "/{organization_id}/invites/{invite_id}",
+    dependencies=[Depends(require_org_permission("member:invite"))],
+    response_model=Message,
+)
+async def revoke_invite(
+    session: SessionDep,
+    _current_user: CurrentUser,
+    organization_id: uuid.UUID,
+    invite_id: uuid.UUID,
+) -> Message:
+    """Revoke (cancel) a pending invite."""
+    invite = await session.get(OrganizationInvite, invite_id)
+    if invite is None or invite.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.status == INVITE_PENDING:
+        invite.status = INVITE_CANCELED
+        session.add(invite)
+        await session.commit()
+    return Message(message="Invite revoked")
+
+
+@router.post(
+    "/{organization_id}/invites/{invite_id}/resend",
+    dependencies=[Depends(require_org_permission("member:invite"))],
+    response_model=OrganizationInvitePublic,
+)
+async def resend_invite(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+    invite_id: uuid.UUID,
+) -> Any:
+    """Re-send a pending invite email."""
+    invite = await session.get(OrganizationInvite, invite_id)
+    if invite is None or invite.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.status != INVITE_PENDING:
+        raise HTTPException(status_code=400, detail="Invite is not pending")
+    org = await get_organization(session, organization_id)
+    invite_link = f"{settings.FRONTEND_HOST}/invite?token={invite.token}"
+    email_data = generate_organization_invite_email(
+        org_name=org.name if org else "organization",
+        inviter_name=current_user.full_name or current_user.email,
+        link=invite_link,
+    )
+    await send_email_background(
+        email_to=str(invite.email),
+        subject=email_data.subject,
+        html_content=email_data.html_content,
+    )
+    return OrganizationInvitePublic.model_validate(invite)
+
+
+@router.post("/invites/{token}/decline", response_model=Message)
+async def decline_invite(
+    session: SessionDep, current_user: CurrentUser, token: str
+) -> Message:
+    """Decline an invitation (must be logged in with the invited email)."""
+    invite = await get_invite_by_token(session, token)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.email.lower() != current_user.email.lower():
+        raise HTTPException(status_code=403, detail="This invite is not for you")
+    if invite.status == INVITE_PENDING:
+        invite.status = INVITE_DECLINED
+        session.add(invite)
+        await session.commit()
+    return Message(message="Invite declined")
+
+
+@router.post(
+    "/{organization_id}/transfer-ownership",
+    dependencies=[Depends(require_org_permission("member:remove"))],
+    response_model=Message,
+)
+async def transfer_ownership(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Message:
+    """Transfer ownership to another member (the owner becomes an admin)."""
+    target = await find_membership(
+        session, organization_id=organization_id, user_id=user_id
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    owner = await find_membership(
+        session, organization_id=organization_id, user_id=current_user.id
+    )
+    if owner is None or owner.role != ORG_ROLE_OWNER:
+        raise HTTPException(
+            status_code=403, detail="Only the owner can transfer ownership"
+        )
+    target.role = ORG_ROLE_OWNER
+    owner.role = "admin"
+    session.add(target)
+    session.add(owner)
+    await record_audit(
+        session,
+        action="org.transfer_ownership",
+        user_id=current_user.id,
+        organization_id=organization_id,
+        entity_type="organization",
+        entity_id=str(organization_id),
+        detail={"new_owner": str(user_id)},
+    )
+    await session.commit()
+    return Message(message="Ownership transferred")
+
+
+@router.post(
+    "/{organization_id}/leave",
+    dependencies=[Depends(require_org_permission("org:view"))],
+    response_model=Message,
+)
+async def leave_organization(
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+) -> Message:
+    """Leave an organization. The owner must transfer ownership first."""
+    membership = await find_membership(
+        session, organization_id=organization_id, user_id=current_user.id
+    )
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Not a member")
+    if membership.role == ORG_ROLE_OWNER:
+        owner_count = len(
+            (
+                await session.exec(
+                    select(OrganizationMember).where(
+                        OrganizationMember.organization_id == organization_id,
+                        OrganizationMember.role == ORG_ROLE_OWNER,
+                    )
+                )
+            ).all()
+        )
+        if owner_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Transfer ownership before leaving the last owner",
+            )
+    await session.delete(membership)
+    await session.commit()
+    return Message(message="Left organization")

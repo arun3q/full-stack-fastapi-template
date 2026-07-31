@@ -106,6 +106,9 @@ async def authenticate_api_key(
     api_key = await find_by_key(session, x_api_key)
     if api_key is None:
         raise HTTPException(status_code=401, detail="Invalid API key")
+    org = await session.get(Organization, api_key.organization_id)
+    if org is not None and not org.is_active:
+        raise HTTPException(status_code=403, detail="Organization is suspended")
     api_key.last_used_at = datetime.now(UTC)
     session.add(api_key)
     await session.commit()

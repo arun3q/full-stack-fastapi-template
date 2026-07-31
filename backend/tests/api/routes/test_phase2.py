@@ -17,7 +17,6 @@ from app.models import (
     User,
     UserCreate,
 )
-from tests.utils.user import user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
 
@@ -89,9 +88,7 @@ async def test_usage_quota_enforcement(db: AsyncSession) -> None:
     await db.commit()
 
     # Exceeded
-    assert not await check_quota(
-        db, organization_id=org_id, meter="ai_calls", amount=1
-    )
+    assert not await check_quota(db, organization_id=org_id, meter="ai_calls", amount=1)
     assert await get_usage(db, organization_id=org_id, meter="ai_calls") == 1
 
 

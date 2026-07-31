@@ -131,6 +131,8 @@ async def get_current_organization(
     active_org = await session.get(Organization, membership.organization_id)
     if active_org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
+    if not active_org.is_active:
+        raise HTTPException(status_code=403, detail="Organization is suspended")
     await set_tenant_context(
         session,
         organization_id=active_org.id,

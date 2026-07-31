@@ -19,6 +19,7 @@ ORG_ROLE_VIEWER = "viewer"
 INVITE_PENDING = "pending"
 INVITE_ACCEPTED = "accepted"
 INVITE_DECLINED = "declined"
+INVITE_CANCELED = "canceled"
 INVITE_EXPIRED = "expired"
 
 
@@ -113,6 +114,7 @@ class UserAccess(SQLModel):
 class Organization(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(max_length=255)
+    is_active: bool = True
     slug: str = Field(unique=True, index=True, max_length=100)
     # JSON string, e.g. {"accent": "teal", "logo_url": "https://..."}
     branding: str | None = Field(default=None, max_length=2000)
@@ -137,6 +139,7 @@ class OrganizationCreate(SQLModel):
 class OrganizationUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     branding: str | None = Field(default=None, max_length=2000)
+    is_active: bool | None = None
 
 
 class OrganizationPublic(SQLModel):
