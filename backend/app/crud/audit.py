@@ -36,13 +36,32 @@ async def record_audit(
 
 
 async def list_audit_logs(
-    session: AsyncSession, skip: int = 0, limit: int = 100
-) -> Sequence[AuditLog]:
-    return (
-        await session.exec(
-            select(AuditLog)
-            .order_by(col(AuditLog.created_at).desc())
-            .offset(skip)
-            .limit(limit)
+    session: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> tuple[Sequence[AuditLog], str | None]:
+    from app.core.pagination import decode_cursor, encode_cursor
+
+    statement = select(AuditLog).order_by(col(AuditLog.created_at).desc()).limit(limit)
+    if cursor:
+        keyset = decode_cursor(cursor)
+        if keyset is None:
+            raise ValueError("Invalid cursor")
+        cursor_created_at, cursor_id = keyset
+        statement = statement.where(
+            (col(AuditLog.created_at) < cursor_created_at)
+            | (
+                (col(AuditLog.created_at) == cursor_created_at)
+                & (AuditLog.id < cursor_id)
+            )
         )
-    ).all()
+    else:
+        statement = statement.offset(skip)
+    entries = (await session.exec(statement)).all()
+    next_cursor = (
+        encode_cursor(entries[-1].created_at, entries[-1].id)
+        if entries and len(entries) == limit
+        else None
+    )
+    return entries, next_cursor

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
-
+import { useTranslation } from "react-i18next"
 import { Logo } from "@/components/Common/Logo"
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ interface MarketingLayoutProps {
 
 export function MarketingLayout({ children }: MarketingLayoutProps) {
   const { resolvedTheme, setTheme } = useTheme()
+  const { t } = useTranslation()
   const [config, setConfig] = useState<PublicConfig | null>(null)
 
   useEffect(() => {
@@ -35,16 +36,16 @@ export function MarketingLayout({ children }: MarketingLayoutProps) {
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <Link to="/" className="hover:text-foreground">
-              Features
+              {t("nav.features")}
             </Link>
             <Link to="/pricing" className="hover:text-foreground">
-              Pricing
+              {t("nav.pricing")}
             </Link>
             <Link to="/terms" className="hover:text-foreground">
-              Terms
+              {t("nav.terms")}
             </Link>
             <Link to="/privacy" className="hover:text-foreground">
-              Privacy
+              {t("nav.privacy")}
             </Link>
           </nav>
           <div className="flex items-center gap-2">
@@ -64,15 +65,15 @@ export function MarketingLayout({ children }: MarketingLayoutProps) {
             </Button>
             {loggedIn ? (
               <Button asChild>
-                <Link to="/dashboard">Open app</Link>
+                <Link to="/dashboard">{t("nav.openApp")}</Link>
               </Button>
             ) : (
               <>
                 <Button variant="outline" asChild>
-                  <Link to="/login">Sign in</Link>
+                  <Link to="/login">{t("nav.signIn")}</Link>
                 </Button>
                 <Button asChild>
-                  <Link to="/signup">Get started</Link>
+                  <Link to="/signup">{t("nav.getStarted")}</Link>
                 </Button>
               </>
             )}
@@ -89,10 +90,10 @@ export function MarketingLayout({ children }: MarketingLayoutProps) {
           </p>
           <div className="flex items-center gap-4">
             <Link to="/terms" className="hover:text-foreground">
-              Terms
+              {t("nav.terms")}
             </Link>
             <Link to="/privacy" className="hover:text-foreground">
-              Privacy
+              {t("nav.privacy")}
             </Link>
           </div>
         </div>

@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "features": "Características",
+    "pricing": "Precios",
+    "terms": "Términos",
+    "privacy": "Privacidad",
+    "signIn": "Iniciar sesión",
+    "getStarted": "Empezar",
+    "openApp": "Abrir la app",
+    "heroTitle": "Lanza tu SaaS con {{project}}",
+    "heroSubtitle": "Espacios de trabajo multi-tenant, control de acceso por roles, suscripciones, inicio de sesión social y streaming de IA — todo incluido.",
+    "featuresHeading": "Todo lo que necesitas",
+    "featuresSubtitle": "Una base completa para que te centres en tu producto.",
+    "pricingHeading": "Precios sencillos",
+    "pricingSubtitle": "Empieza gratis y escala a medida que creces.",
+    "ctaHeading": "¿Listo para construir algo grande?",
+    "ctaAction": "Crea tu cuenta gratuita",
+    "getStartedFree": "Empieza gratis",
+    "viewPricing": "Ver precios"
+  },
+  "app": {
+    "dashboard": "Panel",
+    "items": "Elementos",
+    "members": "Miembros",
+    "billing": "Facturación",
+    "aiChat": "Chat IA",
+    "gettingStarted": "Primeros pasos",
+    "admin": "Administración",
+    "notifications": "Notificaciones",
+    "markAllRead": "Marcar todo como leído",
+    "allCaughtUp": "Estás al día"
+  },
+  "auth": {
+    "loginTitle": "Inicia sesión en tu cuenta",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "logIn": "Iniciar sesión",
+    "createAccount": "Crea una cuenta",
+    "fullName": "Nombre completo",
+    "confirmPassword": "Confirmar contraseña",
+    "signUp": "Registrarse",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "noAccount": "¿No tienes una cuenta?",
+    "haveAccount": "¿Ya tienes una cuenta?"
+  },
+  "appearance": {
+    "appearance": "Apariencia",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Sistema",
+    "accent": "Acento",
+    "language": "Idioma"
+  },
+  "dashboard": {
+    "greeting": "Hola, {{name}} 👋",
+    "welcome": "Bienvenido de nuevo, ¡qué gusto verte!"
+  }
+}

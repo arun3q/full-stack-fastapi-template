@@ -8,6 +8,7 @@ from app import crud
 from app.api.deps import (
     CurrentOrg,
     CurrentUser,
+    ReadSessionDep,
     SessionDep,
     get_current_active_superuser,
 )
@@ -47,18 +48,27 @@ router = APIRouter(prefix="/users", tags=["users"])
     dependencies=[Depends(get_current_active_superuser)],
     response_model=UsersPublic,
 )
-async def read_users(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
+async def read_users(
+    session: ReadSessionDep,
+    skip: int = 0,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> Any:
     """
     Retrieve users.
     """
-
     count_statement = select(func.count()).select_from(User)
     count = (await session.exec(count_statement)).one()
 
-    users = await crud.list_users(session=session, skip=skip, limit=limit)
+    try:
+        users, next_cursor = await crud.list_users(
+            session=session, skip=skip, limit=limit, cursor=cursor
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid cursor")
 
     users_public = [UserPublic.model_validate(user) for user in users]
-    return UsersPublic(data=users_public, count=count)
+    return UsersPublic(data=users_public, count=count, next_cursor=next_cursor)
 
 
 @router.post(

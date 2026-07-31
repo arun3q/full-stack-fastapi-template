@@ -522,6 +522,15 @@ Production-grade security, observability and integrations, all optional:
 | **Metrics** | Prometheus at `/metrics` | `ENABLE_METRICS` |
 | **Object storage** | S3/MinIO uploads via `/api/v1/files/upload` | `S3_*` settings |
 | **Cookie auth** | optional httpOnly `access_token` cookie | `AUTH_TOKEN_IN_COOKIE` |
+| **Read replicas** | read-only engine + `get_read_session` on list/admin reads | `READ_REPLICA_URL` |
+| **Enterprise SAML** | `python3-saml` SP: metadata, login, ACS | `SAML_*` settings |
+| **SCIM 2.0** | provision users/groups per org via API key | `/api/v1/scim/v2/*` |
+
+### i18n
+
+The frontend ships `i18next`/`react-i18next` with English + Spanish locales and a
+language switcher in the *Appearance* menu (add locales under
+`frontend/src/i18n/locales`).
 
 ### Admin API (superuser)
 

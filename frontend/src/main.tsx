@@ -11,6 +11,7 @@ import { ApiError, OpenAPI } from "./client"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
 import { configureOpenApi } from "./lib/featureApi"
+import "./i18n"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
 

@@ -64,11 +64,16 @@ pgbouncer:
 Point the app at PgBouncer (`POSTGRES_SERVER=pgbouncer`, `POSTGRES_PORT=6432`).
 The async pool already uses `pool_pre_ping`, which works well behind a pooler.
 
-**Read replicas** — add a replica and expose a second engine for read-only
-queries. A ready-made pattern: add `READ_REPLICA_URL` to settings and a
-`get_read_session` dependency that routes `SELECT`-only endpoints (reporting,
-list endpoints) to the replica engine. Kept out of the core template to avoid
-over-configuring; wire it when you need it.
+**Read replicas** — wired in:
+
+```dotenv
+READ_REPLICA_URL=postgresql+psycopg://user:pass@replica-host/app
+```
+
+When set, the app creates a read-only engine and the `get_read_session`
+dependency routes read-heavy endpoints (users, items, admin lists, plans) to it.
+When unset it falls back to the primary. Add a replica in Postgres (streaming
+replication), then set the URL.
 
 ---
 
@@ -77,9 +82,12 @@ over-configuring; wire it when you need it.
 The app already scopes every query by `organization_id`. RLS is an optional
 defense-in-depth layer at the database.
 
-**Enable it (opt-in):**
+**Enable it:**
 
-1. Enable RLS on the tenant tables:
+1. Set `ENABLE_RLS=true` — the app then runs
+   `set_config('app.current_org_id', ...)` and `set_config('app.is_admin', ...)`
+   per request (tenant + admin flows).
+2. Apply the policies to the tenant tables:
 
 ```sql
 ALTER TABLE item ENABLE ROW LEVEL SECURITY;
@@ -94,47 +102,60 @@ CREATE POLICY tenant_isolation ON item
 -- repeat for subscription, organizationmember
 ```
 
-2. Set the tenant on every transaction. In `app/core/db.py`, extend
-   `get_async_session()` to run:
-
-```sql
-SELECT set_config('app.current_org_id', :org, true);
-SELECT set_config('app.is_admin', :admin, true);
-```
-
-   using the resolved `X-Organization-ID` header and the user's admin status.
-
 > Because the app-level queries already filter by `organization_id`, RLS is a
-> second line of defense, not the primary isolation mechanism. Enable it after
-> load-testing your write paths.
+> second line of defense, not the primary isolation mechanism.
 
 ---
 
-## Enterprise SSO & SCIM
+## Enterprise SSO (SAML) & SCIM
 
-- **SSO (SAML / OIDC):** Authlib already powers OIDC social login. For
-  enterprise SAML, integrate [python3-saml](https://github.com/onelogin/python3-saml)
-  behind the same `/auth/{provider}/callback` pattern. Add a `Provider` config
-  (idp metadata, cert) per tenant and require it for SSO-forced organizations.
-- **SCIM provisioning:** expose the SCIM 2.0 endpoints
-  (`/scim/v2/Users`, `/scim/v2/Groups`) authenticated with a tenant bearer
-  token; map create/update/deactivate to `OrganizationMember` + `User` lifecycle.
-- **Session/SSO account linking:** reuse `OAuthAccount` (`provider`,
-  `provider_account_id`) to link enterprise identities to users.
+**SAML SSO** — wired with `python3-saml`:
+
+```dotenv
+SAML_ENABLED=true
+SAML_SP_ENTITY_ID=https://<your-domain>/api/v1/auth/saml/metadata
+SAML_SP_ACS_URL=https://<your-domain>/api/v1/auth/saml/acs
+SAML_IDP_METADATA=https://idp.example.com/metadata   # file path or URL
+SAML_ATTRIBUTE_EMAIL=email
+SAML_ATTRIBUTE_NAME=displayname
+```
+
+Endpoints:
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/v1/auth/saml/metadata` | SP metadata (register in your IdP) |
+| GET | `/api/v1/auth/saml/login` | SP-initiated login → redirect to IdP |
+| POST | `/api/v1/auth/saml/acs` | Assertion consumer (provisions the user + session) |
+| GET | `/api/v1/auth/saml/status` | `configured` / `not-configured` |
+
+**SCIM 2.0 provisioning** — `python3-saml` not needed; SCIM authenticates with
+an organization API key (`Authorization: Bearer <key>` or `X-API-Key`) and
+provisions users as members of that key's organization:
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/v1/scim/v2/ServiceProviderConfig` | Capabilities |
+| GET | `/api/v1/scim/v2/Users` | List members |
+| GET | `/api/v1/scim/v2/Users/{id}` | Get a member |
+| POST | `/api/v1/scim/v2/Users` | Provision a user (create + add to org) |
+| PATCH | `/api/v1/scim/v2/Users/{id}` | Update (active=false deactivates) |
+| DELETE | `/api/v1/scim/v2/Users/{id}` | Deactivate (SCIM delete == deactivate) |
+| GET | `/api/v1/scim/v2/Groups` | Role-based groups (owner/admin/member/viewer) |
 
 ---
 
 ## i18n (internationalization)
 
-The frontend is English-only today. To add i18n:
+Implemented with `i18next` + `react-i18next`:
 
-1. Add `i18next` + `react-i18next` and wrap the app.
-2. Replace hardcoded strings with `t("key")` and ship `locales/en/*.json`
-   (and additional locales).
-3. Add a `LANGUAGE` setting; persist the choice with the theme.
-
-Backend: Pydantic validation errors can be localized with a custom
-`RequestValidationError` handler mapping error messages per locale.
+- Locales live in `frontend/src/i18n/locales/{en,es}.json` (add more by adding a
+  JSON file and registering it in `frontend/src/i18n/index.ts`).
+- The *Appearance* menu includes a **Language** switcher (English/Español).
+- Key surfaces are translated (marketing, auth, app shell, dashboard, appearance);
+  add strings as you build out the app.
+- Backend: Pydantic validation errors can be localized with a custom
+  `RequestValidationError` handler mapping messages per locale.
 
 ---
 

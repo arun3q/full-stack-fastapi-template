@@ -13,6 +13,7 @@ import {
 export type Item = {
   icon: LucideIcon
   title: string
+  titleKey?: string
   path: string
 }
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.deps import (
     CurrentOrg,
     CurrentUser,
+    ReadSessionDep,
     SessionDep,
     require_org_permission,
     require_roles,
@@ -27,7 +28,7 @@ FREE_PLAN_MAX_ITEMS = 5
 
 @router.get("/", response_model=ItemsPublic)
 async def read_items(
-    session: SessionDep,
+    session: ReadSessionDep,
     current_user: CurrentUser,
     current_org: CurrentOrg,
     skip: int = 0,
@@ -65,7 +66,9 @@ async def read_items(
     dependencies=[Depends(require_roles("staff"))],
     response_model=ItemsPublic,
 )
-async def read_all_items(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
+async def read_all_items(
+    session: ReadSessionDep, skip: int = 0, limit: int = 100
+) -> Any:
     """List every item in the system (staff or above only)."""
     count = await count_items(session)
     items, _ = await list_items(session=session, skip=skip, limit=limit)

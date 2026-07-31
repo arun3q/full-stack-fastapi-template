@@ -1,5 +1,5 @@
 import { Bot, Briefcase, CreditCard, Home, Rocket, Users } from "lucide-react"
-
+import { useTranslation } from "react-i18next"
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
 import {
@@ -14,20 +14,43 @@ import { OrgSwitcher } from "./OrgSwitcher"
 import { User } from "./User"
 
 const baseItems: Item[] = [
-  { icon: Home, title: "Dashboard", path: "/dashboard" },
-  { icon: Rocket, title: "Getting started", path: "/onboarding" },
-  { icon: Briefcase, title: "Items", path: "/items" },
-  { icon: Users, title: "Members", path: "/members" },
-  { icon: CreditCard, title: "Billing", path: "/billing" },
-  { icon: Bot, title: "AI Chat", path: "/chat" },
+  {
+    icon: Home,
+    titleKey: "app.dashboard",
+    title: "Dashboard",
+    path: "/dashboard",
+  },
+  {
+    icon: Rocket,
+    titleKey: "app.gettingStarted",
+    title: "Getting started",
+    path: "/onboarding",
+  },
+  { icon: Briefcase, titleKey: "app.items", title: "Items", path: "/items" },
+  { icon: Users, titleKey: "app.members", title: "Members", path: "/members" },
+  {
+    icon: CreditCard,
+    titleKey: "app.billing",
+    title: "Billing",
+    path: "/billing",
+  },
+  { icon: Bot, titleKey: "app.aiChat", title: "AI Chat", path: "/chat" },
 ]
 
 export function AppSidebar() {
+  const { t } = useTranslation()
   const { user: currentUser } = useAuth()
 
+  const translatedBase = baseItems.map((item) => ({
+    ...item,
+    title: t(item.titleKey ?? "app.dashboard"),
+  }))
   const items = currentUser?.is_superuser
-    ? [...baseItems, { icon: Users, title: "Admin", path: "/admin" }]
-    : baseItems
+    ? [
+        ...translatedBase,
+        { icon: Users, title: t("app.admin"), path: "/admin" },
+      ]
+    : translatedBase
 
   return (
     <Sidebar collapsible="icon">

@@ -33,6 +33,22 @@ async_session_factory = async_sessionmaker(
     async_engine, class_=AsyncSession, expire_on_commit=False
 )
 
+# Optional read-replica engine (falls back to the primary when not configured)
+_read_engine = None
+if settings.READ_REPLICA_URL:
+    _read_engine = create_async_engine(
+        settings.READ_REPLICA_URL,
+        pool_pre_ping=settings.POSTGRES_POOL_PRE_PING,
+        pool_size=settings.POSTGRES_POOL_SIZE,
+        max_overflow=settings.POSTGRES_MAX_OVERFLOW,
+        pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
+    )
+_read_session_factory = async_sessionmaker(
+    _read_engine if _read_engine is not None else async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
 
 # make sure all SQLModel models are imported (app.models) before initializing DB
 # otherwise, SQLModel might fail to initialize relationships properly
@@ -42,6 +58,12 @@ async_session_factory = async_sessionmaker(
 async def get_async_session() -> AsyncGenerator[AsyncSession]:
     """Dependency that yields an async DB session for the duration of a request."""
     async with async_session_factory() as session:
+        yield session
+
+
+async def get_read_session() -> AsyncGenerator[AsyncSession]:
+    """Dependency that yields a read-only DB session (read replica when set)."""
+    async with _read_session_factory() as session:
         yield session
 
 

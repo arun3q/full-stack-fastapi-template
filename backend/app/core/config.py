@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     POSTGRES_POOL_TIMEOUT: int = 30
     POSTGRES_POOL_PRE_PING: bool = True
 
+    # Optional read-replica connection for read-heavy endpoints
+    READ_REPLICA_URL: str | None = None
+
     # Redis / background jobs
     REDIS_URL: str = "redis://localhost:6379/0"
 
@@ -148,6 +151,16 @@ class Settings(BaseSettings):
 
     # OpenTelemetry tracing (optional toggle)
     ENABLE_OTEL: bool = False
+
+    # Enterprise SAML SSO (python3-saml). Set SAML_ENABLED + IdP metadata to use.
+    SAML_ENABLED: bool = False
+    SAML_SP_ENTITY_ID: str = "https://localhost/api/v1/auth/saml/metadata"
+    SAML_SP_ACS_URL: str = "https://localhost/api/v1/auth/saml/acs"
+    SAML_SP_LOGOUT_URL: str = "https://localhost/api/v1/auth/saml/sls"
+    # File path or URL to the IdP metadata XML
+    SAML_IDP_METADATA: str | None = None
+    SAML_ATTRIBUTE_EMAIL: str = "email"
+    SAML_ATTRIBUTE_NAME: str = "displayname"
 
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

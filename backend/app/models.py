@@ -98,6 +98,7 @@ class UserPublic(UserBase):
 class UsersPublic(SQLModel):
     data: list[UserPublic]
     count: int
+    next_cursor: str | None = None
 
 
 class UserAccess(SQLModel):
@@ -556,6 +557,7 @@ class AuditLogPublic(SQLModel):
 class AuditLogsPublic(SQLModel):
     data: list[AuditLogPublic]
     count: int
+    next_cursor: str | None = None
 
 
 # Outbound webhooks ----------------------------------------------------------

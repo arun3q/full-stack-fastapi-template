@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "features": "Features",
+    "pricing": "Pricing",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "signIn": "Sign in",
+    "getStarted": "Get started",
+    "openApp": "Open app",
+    "heroTitle": "Launch your SaaS on {{project}}",
+    "heroSubtitle": "Multi-tenant workspaces, role-based access, subscriptions, social login and AI streaming — batteries included, ready to be your next product.",
+    "featuresHeading": "Everything you need",
+    "featuresSubtitle": "A complete foundation so you can focus on your product.",
+    "pricingHeading": "Simple pricing",
+    "pricingSubtitle": "Start free and scale as you grow.",
+    "ctaHeading": "Ready to build something great?",
+    "ctaAction": "Create your free account",
+    "getStartedFree": "Get started free",
+    "viewPricing": "View pricing"
+  },
+  "app": {
+    "dashboard": "Dashboard",
+    "items": "Items",
+    "members": "Members",
+    "billing": "Billing",
+    "aiChat": "AI Chat",
+    "gettingStarted": "Getting started",
+    "admin": "Admin",
+    "notifications": "Notifications",
+    "markAllRead": "Mark all read",
+    "allCaughtUp": "You're all caught up"
+  },
+  "auth": {
+    "loginTitle": "Login to your account",
+    "email": "Email",
+    "password": "Password",
+    "logIn": "Log In",
+    "createAccount": "Create an account",
+    "fullName": "Full Name",
+    "confirmPassword": "Confirm Password",
+    "signUp": "Sign Up",
+    "forgotPassword": "Forgot your password?",
+    "noAccount": "Don't have an account yet?",
+    "haveAccount": "Already have an account?"
+  },
+  "appearance": {
+    "appearance": "Appearance",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "accent": "Accent",
+    "language": "Language"
+  },
+  "dashboard": {
+    "greeting": "Hi, {{name}} 👋",
+    "welcome": "Welcome back, nice to see you again!!!"
+  }
+}

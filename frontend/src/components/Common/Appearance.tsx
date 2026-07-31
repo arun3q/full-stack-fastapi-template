@@ -1,4 +1,5 @@
-import { Monitor, Moon, Sun } from "lucide-react"
+import { Languages, Monitor, Moon, Sun } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import {
   ACCENTS,
@@ -39,12 +40,13 @@ const ICON_MAP: Record<Theme, LucideIcon> = {
 
 function AccentPicker() {
   const { accent, setAccent } = useTheme()
+  const { t } = useTranslation()
 
   return (
     <>
       <DropdownMenuSeparator />
       <DropdownMenuLabel className="text-xs text-muted-foreground">
-        Accent
+        {t("appearance.accent")}
       </DropdownMenuLabel>
       <div className="flex gap-1.5 px-2 py-1.5">
         {ACCENTS.map((candidate) => (
@@ -66,9 +68,50 @@ function AccentPicker() {
   )
 }
 
+function LanguagePicker() {
+  const { t, i18n } = useTranslation()
+
+  const switchTo = (lang: string) => {
+    i18n.changeLanguage(lang)
+  }
+
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Languages className="size-3.5" />
+        {t("appearance.language")}
+      </DropdownMenuLabel>
+      <div className="grid grid-cols-2 gap-1 px-2 py-1.5">
+        <button
+          type="button"
+          data-testid="lang-en"
+          onClick={() => switchTo("en")}
+          className={`rounded-md px-2 py-1 text-sm hover:bg-accent ${
+            i18n.resolvedLanguage?.startsWith("en") ? "bg-accent" : ""
+          }`}
+        >
+          English
+        </button>
+        <button
+          type="button"
+          data-testid="lang-es"
+          onClick={() => switchTo("es")}
+          className={`rounded-md px-2 py-1 text-sm hover:bg-accent ${
+            i18n.resolvedLanguage?.startsWith("es") ? "bg-accent" : ""
+          }`}
+        >
+          Español
+        </button>
+      </div>
+    </>
+  )
+}
+
 export const SidebarAppearance = () => {
   const { isMobile } = useSidebar()
   const { setTheme, theme } = useTheme()
+  const { t } = useTranslation()
   const Icon = ICON_MAP[theme]
 
   return (
@@ -77,7 +120,7 @@ export const SidebarAppearance = () => {
         <DropdownMenuTrigger asChild>
           <SidebarMenuButton tooltip="Appearance" data-testid="theme-button">
             <Icon className="size-4 text-muted-foreground" />
-            <span>Appearance</span>
+            <span>{t("appearance.appearance")}</span>
             <span className="sr-only">Toggle theme</span>
           </SidebarMenuButton>
         </DropdownMenuTrigger>
@@ -91,20 +134,21 @@ export const SidebarAppearance = () => {
             onClick={() => setTheme("light")}
           >
             <Sun className="mr-2 h-4 w-4" />
-            Light
+            {t("appearance.light")}
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="dark-mode"
             onClick={() => setTheme("dark")}
           >
             <Moon className="mr-2 h-4 w-4" />
-            Dark
+            {t("appearance.dark")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme("system")}>
             <Monitor className="mr-2 h-4 w-4" />
-            System
+            {t("appearance.system")}
           </DropdownMenuItem>
           <AccentPicker />
+          <LanguagePicker />
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>
@@ -113,6 +157,7 @@ export const SidebarAppearance = () => {
 
 export const Appearance = () => {
   const { setTheme } = useTheme()
+  const { t } = useTranslation()
 
   return (
     <div className="flex items-center justify-center">
@@ -130,20 +175,21 @@ export const Appearance = () => {
             onClick={() => setTheme("light")}
           >
             <Sun className="mr-2 h-4 w-4" />
-            Light
+            {t("appearance.light")}
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="dark-mode"
             onClick={() => setTheme("dark")}
           >
             <Moon className="mr-2 h-4 w-4" />
-            Dark
+            {t("appearance.dark")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme("system")}>
             <Monitor className="mr-2 h-4 w-4" />
-            System
+            {t("appearance.system")}
           </DropdownMenuItem>
           <AccentPicker />
+          <LanguagePicker />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

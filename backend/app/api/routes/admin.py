@@ -3,9 +3,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, select
 
-from app.api.deps import SessionDep, get_current_active_superuser
+from app import crud
+from app.api.deps import ReadSessionDep, SessionDep, get_current_active_superuser
 from app.crud.audit import list_audit_logs
-from app.crud.users import get_user_by_id, list_users
+from app.crud.users import get_user_by_id
 from app.models import (
     AuditLogPublic,
     AuditLogsPublic,
@@ -23,7 +24,7 @@ admin_only = [Depends(get_current_active_superuser)]
 
 
 @router.get("/overview", dependencies=admin_only)
-async def admin_overview(session: SessionDep) -> dict[str, int]:
+async def admin_overview(session: ReadSessionDep) -> dict[str, int]:
     """Platform-wide counters for the admin console."""
     counts: dict[str, int] = {}
     for label, model in [
@@ -48,17 +49,34 @@ async def admin_overview(session: SessionDep) -> dict[str, int]:
 
 @router.get("/organizations", dependencies=admin_only)
 async def admin_organizations(
-    session: SessionDep, skip: int = 0, limit: int = 100
+    session: ReadSessionDep,
+    skip: int = 0,
+    limit: int = 100,
+    cursor: str | None = None,
 ) -> dict[str, Any]:
     """List organizations with their member counts."""
-    orgs = (
-        await session.exec(
-            select(Organization)
-            .order_by(col(Organization.created_at).desc())
-            .offset(skip)
-            .limit(limit)
+    from app.core.pagination import decode_cursor, encode_cursor
+
+    statement = (
+        select(Organization).order_by(col(Organization.created_at).desc()).limit(limit)
+    )
+    if cursor:
+        keyset = decode_cursor(cursor)
+        if keyset is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=400, detail="Invalid cursor")
+        cursor_created_at, cursor_id = keyset
+        statement = statement.where(
+            (col(Organization.created_at) < cursor_created_at)
+            | (
+                (col(Organization.created_at) == cursor_created_at)
+                & (Organization.id < cursor_id)
+            )
         )
-    ).all()
+    else:
+        statement = statement.offset(skip)
+    orgs = (await session.exec(statement)).all()
     data: list[dict[str, Any]] = []
     for org in orgs:
         member_count = (
@@ -77,13 +95,23 @@ async def admin_organizations(
                 "created_at": org.created_at,
             }
         )
-    return {"data": data, "count": len(data)}
+    next_cursor = (
+        encode_cursor(orgs[-1].created_at, orgs[-1].id)
+        if orgs and len(orgs) == limit
+        else None
+    )
+    return {"data": data, "count": len(data), "next_cursor": next_cursor}
 
 
-@router.get("/users", dependencies=admin_only, response_model=list[UserPublic])
-async def admin_users(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
-    users = await list_users(session=session, skip=skip, limit=limit)
-    return [UserPublic.model_validate(u) for u in users]
+@router.get("/users", dependencies=admin_only)
+async def admin_users(
+    session: ReadSessionDep, skip: int = 0, limit: int = 100
+) -> dict[str, Any]:
+    users_list, _ = await crud.list_users(session=session, skip=skip, limit=limit)
+    return {
+        "data": [UserPublic.model_validate(u) for u in users_list],
+        "count": len(users_list),
+    }
 
 
 @router.patch("/users/{user_id}/status", dependencies=admin_only)
@@ -108,10 +136,21 @@ async def admin_set_user_status(
 
 
 @router.get("/audit-log", dependencies=admin_only, response_model=AuditLogsPublic)
-async def admin_audit_log(session: SessionDep, skip: int = 0, limit: int = 100) -> Any:
+async def admin_audit_log(
+    session: ReadSessionDep,
+    skip: int = 0,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> Any:
     """Recent platform audit-log entries."""
-    entries = await list_audit_logs(session=session, skip=skip, limit=limit)
+    try:
+        entries, next_cursor = await list_audit_logs(
+            session=session, skip=skip, limit=limit, cursor=cursor
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid cursor")
     return {
         "data": [AuditLogPublic.model_validate(e) for e in entries],
         "count": len(entries),
+        "next_cursor": next_cursor,
     }

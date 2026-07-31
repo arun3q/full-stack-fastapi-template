@@ -121,13 +121,14 @@ Goal: hard multi-tenant isolation, enterprise identity, growth UX.
 
 - [~] Postgres Row-Level Security (RLS) — opt-in `ENABLE_RLS` GUC hook wired
       (tenant + admin flags per request); policies documented in `ops.md`
-- [ ] Read replicas + PgBouncer — documented in `ops.md` (config + runbook)
-- [~] Keyset pagination across all list endpoints — helper + items done; other lists pending
+- [x] Read replicas + PgBouncer — `READ_REPLICA_URL` wired (read engine +
+      `get_read_session` on list/admin/plan reads); PgBouncer documented in `ops.md`
+- [x] Keyset pagination across list endpoints — items, users, admin orgs/audit-log
 - [x] Prometheus metrics (`/metrics` + request counters/histograms)
-- [ ] SSO (SAML/OIDC) + SCIM — documented in `ops.md` (Authlib OIDC ready; SAML/SCIM pending)
+- [x] SSO (SAML) via python3-saml + SCIM 2.0 provisioning (users/groups)
 - [x] Per-tenant branding — `Organization.branding` + API + frontend accent wiring
 - [x] Notifications center (backend + notification bell UI + unread count)
-- [ ] i18n framework — documented in `ops.md` (scaffold guide)
+- [x] i18n framework (i18next/react-i18next) — en+es locales + language switcher
 - [x] Onboarding wizard (create org → invite → subscribe)
 - [x] Backup/PITR + restore runbook; deploy/rollback notes (`ops.md`)
 

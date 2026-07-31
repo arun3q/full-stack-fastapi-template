@@ -13,7 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import security
 from app.core.access import billing_enabled, get_active_plan, is_admin, is_staff
 from app.core.config import settings
-from app.core.db import async_session_factory, set_tenant_context
+from app.core.db import async_session_factory, get_read_session, set_tenant_context
 from app.core.orgs import has_permission
 from app.crud.organizations import find_membership
 from app.crud.users import ensure_personal_organization
@@ -39,6 +39,7 @@ async def get_db() -> AsyncGenerator[AsyncSession]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
+ReadSessionDep = Annotated[AsyncSession, Depends(get_read_session)]
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 

@@ -60,12 +60,34 @@ async def get_user_by_id(*, session: AsyncSession, user_id: uuid.UUID) -> User |
 
 
 async def list_users(
-    *, session: AsyncSession, skip: int = 0, limit: int = 100
-) -> Sequence[User]:
-    statement = (
-        select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)
+    *,
+    session: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> tuple[Sequence[User], str | None]:
+    """Return ``(users, next_cursor)`` with optional keyset pagination."""
+    from app.core.pagination import decode_cursor, encode_cursor
+
+    statement = select(User).order_by(col(User.created_at).desc()).limit(limit)
+    if cursor:
+        keyset = decode_cursor(cursor)
+        if keyset is None:
+            raise ValueError("Invalid cursor")
+        cursor_created_at, cursor_id = keyset
+        statement = statement.where(
+            (col(User.created_at) < cursor_created_at)
+            | ((col(User.created_at) == cursor_created_at) & (User.id < cursor_id))
+        )
+    else:
+        statement = statement.offset(skip)
+    users = (await session.exec(statement)).all()
+    next_cursor = (
+        encode_cursor(users[-1].created_at, users[-1].id)
+        if users and len(users) == limit
+        else None
     )
-    return (await session.exec(statement)).all()
+    return users, next_cursor
 
 
 # Dummy hash to use for timing attack prevention when user is not found

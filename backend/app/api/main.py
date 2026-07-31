@@ -13,6 +13,8 @@ from app.api.routes import (
     payments,
     private,
     public,
+    saml,
+    scim,
     sessions,
     totp,
     users,
@@ -26,10 +28,12 @@ api_router.include_router(login.router)
 api_router.include_router(users.router)
 api_router.include_router(utils.router)
 api_router.include_router(items.router)
-# sessions/totp must be registered before auth's catch-all /{provider}
+# sessions/totp/saml must be registered before auth's catch-all /{provider}
 api_router.include_router(sessions.router)
 api_router.include_router(totp.router)
+api_router.include_router(saml.router)
 api_router.include_router(auth.router)
+api_router.include_router(scim.router)
 api_router.include_router(public.router)
 api_router.include_router(organizations.router)
 api_router.include_router(payments.router)
