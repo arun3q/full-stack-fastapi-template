@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import col, select
 
 from app.api.deps import CurrentOrg, CurrentUser, SessionDep
+from app.core.cache import cached
 from app.core.config import settings
 from app.core.jobs import enqueue_job
 from app.core.payments import PaymentError, get_payment_provider
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 
 
 @router.get("/plans", response_model=PlansPublic)
+@cached(lambda *args, **kwargs: "plans", ttl_seconds=60)
 async def read_plans(session: SessionDep) -> Any:
     """List all active plans available for subscription."""
     plans = (

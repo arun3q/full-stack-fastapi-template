@@ -29,6 +29,10 @@ from app.models import (
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
 )
+optional_oauth2 = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/login/access-token",
+    auto_error=False,
+)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:
@@ -40,7 +44,19 @@ SessionDep = Annotated[AsyncSession, Depends(get_db)]
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 
-async def get_current_user(session: SessionDep, token: TokenDep) -> User:
+async def get_current_user(
+    request: Request,
+    session: SessionDep,
+    token: Annotated[str | None, Depends(optional_oauth2)] = None,
+) -> User:
+    if not token and settings.AUTH_TOKEN_IN_COOKIE:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]

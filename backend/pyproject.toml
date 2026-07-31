@@ -28,6 +28,10 @@ dependencies = [
     "setuptools>=70.0.0,<80.0",
     "openai>=1.40.0,<2.0",
     "anthropic>=0.40.0,<1.0",
+    "slowapi>=0.1.9,<1.0",
+    "pyotp>=2.9.0,<3.0",
+    "prometheus-client>=0.20.0,<1.0",
+    "boto3>=1.34.0,<2.0",
 ]
 
 [dependency-groups]
@@ -53,7 +57,7 @@ strict = true
 exclude = ["venv", ".venv", "alembic"]
 
 [[tool.mypy.overrides]]
-module = ["authlib.*", "razorpay", "razorpay.*"]
+module = ["authlib.*", "razorpay", "razorpay.*", "boto3", "boto3.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

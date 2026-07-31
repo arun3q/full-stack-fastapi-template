@@ -8,9 +8,18 @@ import logging
 from typing import Any, cast
 
 from arq.connections import RedisSettings
+from arq.cron import cron
 from arq.worker import create_worker
 
-from app.core.jobs import process_payment_event_job, redis_settings, send_email_job
+from app.core.jobs import (
+    cleanup_expired_invites_job,
+    cleanup_revoked_sessions_job,
+    deliver_webhook_job,
+    process_payment_event_job,
+    redis_settings,
+    send_email_job,
+    subscription_dunning_job,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,8 +36,19 @@ async def shutdown(_ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Settings understood by the ARQ worker."""
 
-    functions = [send_email_job, process_payment_event_job]
-    cron_jobs: list[Any] = []
+    functions = [
+        send_email_job,
+        process_payment_event_job,
+        deliver_webhook_job,
+        cleanup_expired_invites_job,
+        cleanup_revoked_sessions_job,
+        subscription_dunning_job,
+    ]
+    cron_jobs: list[Any] = [
+        cron(cast(Any, cleanup_expired_invites_job), hour=3, minute=0),
+        cron(cast(Any, cleanup_revoked_sessions_job), hour=4, minute=0),
+        cron(cast(Any, subscription_dunning_job), hour=9, minute=0),
+    ]
     redis_settings: RedisSettings = redis_settings()
     on_startup = startup
     on_shutdown = shutdown

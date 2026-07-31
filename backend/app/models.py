@@ -73,6 +73,8 @@ class User(UserBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     # Nullable for users that authenticate exclusively via a social provider
     hashed_password: str | None = Field(default=None, max_length=255)
+    totp_secret: str | None = Field(default=None, max_length=64)
+    totp_enabled: bool = False
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -111,6 +113,8 @@ class Organization(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(max_length=255)
     slug: str = Field(unique=True, index=True, max_length=100)
+    # JSON string, e.g. {"accent": "teal", "logo_url": "https://..."}
+    branding: str | None = Field(default=None, max_length=2000)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -131,12 +135,14 @@ class OrganizationCreate(SQLModel):
 
 class OrganizationUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    branding: str | None = Field(default=None, max_length=2000)
 
 
 class OrganizationPublic(SQLModel):
     id: uuid.UUID
     name: str
     slug: str
+    branding: str | None = None
     created_at: datetime | None = None
 
 
@@ -435,6 +441,7 @@ class ItemPublic(ItemBase):
 class ItemsPublic(SQLModel):
     data: list[ItemPublic]
     count: int
+    next_cursor: str | None = None
 
 
 # AI chat
@@ -457,6 +464,8 @@ class Message(SQLModel):
 class Token(SQLModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
+    expires_in: int | None = None
 
 
 # Contents of JWT token
@@ -467,3 +476,271 @@ class TokenPayload(SQLModel):
 class NewPassword(SQLModel):
     token: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+# Auth sessions (refresh tokens) ---------------------------------------------
+class Session(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+    )
+    refresh_token_hash: str = Field(unique=True, index=True, max_length=255)
+    ip_address: str | None = Field(default=None, max_length=64)
+    user_agent: str | None = Field(default=None, max_length=512)
+    expires_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    last_used_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    revoked_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SessionPublic(SQLModel):
+    id: uuid.UUID
+    ip_address: str | None = None
+    user_agent: str | None = None
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
+    expires_at: datetime | None = None
+
+
+class SessionsPublic(SQLModel):
+    data: list[SessionPublic]
+    count: int
+
+
+class RefreshRequest(SQLModel):
+    refresh_token: str
+
+
+# Audit log ------------------------------------------------------------------
+class AuditLog(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    organization_id: uuid.UUID | None = Field(
+        default=None, foreign_key="organization.id", ondelete="SET NULL"
+    )
+    action: str = Field(index=True, max_length=100)
+    entity_type: str | None = Field(default=None, max_length=100)
+    entity_id: str | None = Field(default=None, max_length=100)
+    ip_address: str | None = Field(default=None, max_length=64)
+    detail: str | None = Field(default=None, max_length=4000)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class AuditLogPublic(SQLModel):
+    id: uuid.UUID
+    action: str
+    entity_type: str | None = None
+    entity_id: str | None = None
+    ip_address: str | None = None
+    detail: str | None = None
+    created_at: datetime | None = None
+
+
+class AuditLogsPublic(SQLModel):
+    data: list[AuditLogPublic]
+    count: int
+
+
+# Outbound webhooks ----------------------------------------------------------
+class Webhook(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    organization_id: uuid.UUID = Field(
+        foreign_key="organization.id", nullable=False, ondelete="CASCADE"
+    )
+    url: str = Field(max_length=2048)
+    secret: str = Field(max_length=255)
+    events: str = Field(default="[]", max_length=2000)
+    is_active: bool = True
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class WebhookCreate(SQLModel):
+    url: str = Field(min_length=1, max_length=2048)
+    secret: str = Field(default="", min_length=0, max_length=255)
+    events: list[str] = Field(default_factory=list)
+
+
+class WebhookUpdate(SQLModel):
+    url: str | None = Field(default=None, min_length=1, max_length=2048)
+    is_active: bool | None = None
+    events: list[str] | None = None
+
+
+class WebhookPublic(SQLModel):
+    id: uuid.UUID
+    url: str
+    events: list[str] = Field(default_factory=list)
+    is_active: bool
+    created_at: datetime | None = None
+
+
+class WebhooksPublic(SQLModel):
+    data: list[WebhookPublic]
+    count: int
+
+
+class WebhookDelivery(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    webhook_id: uuid.UUID = Field(
+        foreign_key="webhook.id", nullable=False, ondelete="CASCADE"
+    )
+    event: str = Field(max_length=100)
+    payload: str = Field(default="{}", max_length=10000)
+    status: str = Field(default="pending", max_length=20)
+    attempts: int = 0
+    response_status: int | None = None
+    response_body: str | None = Field(default=None, max_length=2000)
+    next_retry_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class WebhookDeliveryPublic(SQLModel):
+    id: uuid.UUID
+    event: str
+    status: str
+    attempts: int
+    response_status: int | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class WebhookDeliveriesPublic(SQLModel):
+    data: list[WebhookDeliveryPublic]
+    count: int
+
+
+# API keys / service accounts ------------------------------------------------
+class ApiKey(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    organization_id: uuid.UUID = Field(
+        foreign_key="organization.id", nullable=False, ondelete="CASCADE"
+    )
+    name: str = Field(max_length=255)
+    key_hash: str = Field(unique=True, index=True, max_length=255)
+    scopes: str = Field(default="[]", max_length=2000)
+    last_used_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    revoked_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ApiKeyCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=255)
+    scopes: list[str] = Field(default_factory=list)
+
+
+class ApiKeyPublic(SQLModel):
+    id: uuid.UUID
+    name: str
+    scopes: list[str] = Field(default_factory=list)
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class ApiKeysPublic(SQLModel):
+    data: list[ApiKeyPublic]
+    count: int
+
+
+class ApiKeyCreated(ApiKeyPublic):
+    key: str
+
+
+# Notifications --------------------------------------------------------------
+class Notification(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+    )
+    type: str = Field(default="info", max_length=50)
+    title: str = Field(max_length=255)
+    body: str | None = Field(default=None, max_length=2000)
+    read_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class NotificationPublic(SQLModel):
+    id: uuid.UUID
+    type: str
+    title: str
+    body: str | None = None
+    read_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class NotificationsPublic(SQLModel):
+    data: list[NotificationPublic]
+    count: int
+
+
+# TOTP 2FA -------------------------------------------------------------------
+class TotpSetupRequest(SQLModel):
+    password: str
+
+
+class TotpEnableRequest(SQLModel):
+    password: str
+    code: str
+
+
+class TotpDisableRequest(SQLModel):
+    code: str
+
+
+class TotpSetupResponse(SQLModel):
+    secret: str
+    otpauth_url: str
+
+
+class LoginTotpRequest(SQLModel):
+    totp_code: str
+
+
+# Platform config helpers ----------------------------------------------------
+class MetricsResponse(SQLModel):
+    message: str

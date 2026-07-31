@@ -501,6 +501,50 @@ when billing is enabled.
 
 ---
 
+## Enterprise Hardening (Phase 2)
+
+Production-grade security, observability and integrations, all optional:
+
+| Feature | Notes | Settings |
+| ------- | ----- | -------- |
+| **Refresh tokens + sessions** | `POST /auth/refresh` rotates; `POST /auth/logout` revokes; `GET/DELETE /auth/sessions` manage sessions | `REFRESH_TOKEN_EXPIRE_DAYS` |
+| **Rate limiting** | `slowapi` on login/password-recovery | `RATE_LIMIT_STORAGE` (default in-memory) |
+| **Failed-login lockout** | Redis counter → 429 after N failures | `LOGIN_FAILURE_LIMIT`, `LOGIN_FAILURE_WINDOW_SECONDS` |
+| **TOTP 2FA** | `POST /auth/totp/setup|enable|disable`; login requires a code when enabled | — |
+| **Audit log** | `auditlog` table; wired into auth/admin/org/file actions; `GET /admin/audit-log` | — |
+| **Structured logs** | JSON logs + `X-Request-ID` correlation | `LOG_FORMAT=json` |
+| **Idempotency** | `Idempotency-Key` header replay on POST/PUT/PATCH (Redis) | — |
+| **Outbound webhooks** | signed (HMAC), retries + backoff, delivery log, test dispatch | `/api/v1/webhooks/*` |
+| **API keys** | hashed, scoped, `X-API-Key` auth | `/api/v1/api-keys/*` |
+| **Cron jobs** | expired invites/sessions cleanup, subscription dunning (ARQ) | — |
+| **Caching** | plans + public config cached in Redis | `REDIS_URL` |
+| **Keyset pagination** | `cursor`/`next_cursor` on `GET /items` | — |
+| **Metrics** | Prometheus at `/metrics` | `ENABLE_METRICS` |
+| **Object storage** | S3/MinIO uploads via `/api/v1/files/upload` | `S3_*` settings |
+| **Cookie auth** | optional httpOnly `access_token` cookie | `AUTH_TOKEN_IN_COOKIE` |
+
+### Admin API (superuser)
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/v1/admin/overview` | Platform counters |
+| GET | `/api/v1/admin/organizations` | Tenants + member counts |
+| GET | `/api/v1/admin/users` | All users |
+| PATCH | `/api/v1/admin/users/{id}/status?is_active=` | Enable/disable a user |
+| GET | `/api/v1/admin/audit-log` | Recent audit entries |
+
+### Notifications
+
+`GET /api/v1/notifications/`, `/unread-count`, `/{id}/read`, `/read-all` power the
+in-app notification bell. An invite acceptance notifies the inviter.
+
+### Scale & compliance notes (Phase 3)
+
+See **`ops.md`** for: backups/PITR runbook, PgBouncer + read replicas,
+Row-Level Security (opt-in), enterprise SSO/SCIM, i18n, and monitoring.
+
+---
+
 ## API Reference
 
 Interactive API docs are available at `/api/v1/docs` (Swagger UI) and

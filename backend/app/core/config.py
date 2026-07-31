@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    # Failed login lockout (Redis-backed; skipped when Redis is unavailable)
+    LOGIN_FAILURE_LIMIT: int = 5
+    LOGIN_FAILURE_WINDOW_SECONDS: int = 900
     FRONTEND_HOST: str = "http://localhost:5173"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
@@ -115,6 +119,27 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     ANTHROPIC_API_KEY: str | None = None
     ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
+
+    # Rate limiting (slowapi). Use "memory://" for single-process dev or a
+    # redis URL (e.g. redis://localhost:6379/0) for multi-worker deployments.
+    RATE_LIMIT_STORAGE: str = "memory://"
+
+    # Logging
+    LOG_FORMAT: Literal["console", "json"] = "console"
+
+    # Metrics
+    ENABLE_METRICS: bool = True
+
+    # Object storage (S3 / MinIO compatible)
+    S3_ENDPOINT_URL: str | None = None
+    S3_ACCESS_KEY: str | None = None
+    S3_SECRET_KEY: str | None = None
+    S3_BUCKET: str = "uploads"
+    S3_PUBLIC_URL: str | None = None
+
+    # Auth transport: when True, login sets an httpOnly cookie and the token is
+    # also read from that cookie (CSRF-safe session flow).
+    AUTH_TOKEN_IN_COOKIE: bool = False
 
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

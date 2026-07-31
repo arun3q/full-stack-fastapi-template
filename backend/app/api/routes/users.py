@@ -12,6 +12,7 @@ from app.api.deps import (
     get_current_active_superuser,
 )
 from app.core.access import get_active_plan, resolve_features
+from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.jobs import send_email_background
 from app.core.security import get_password_hash, verify_password
@@ -66,7 +67,9 @@ async def read_users(session: SessionDep, skip: int = 0, limit: int = 100) -> An
 @router.post(
     "/", dependencies=[Depends(get_current_active_superuser)], response_model=UserPublic
 )
-async def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
+async def create_user(
+    *, session: SessionDep, current_user: CurrentUser, user_in: UserCreate
+) -> Any:
     """
     Create new user.
     """
@@ -89,6 +92,14 @@ async def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
             subject=email_data.subject,
             html_content=email_data.html_content,
         )
+    await record_audit(
+        session,
+        action="user.create",
+        user_id=current_user.id,
+        entity_type="user",
+        entity_id=str(user.id),
+        detail={"email": str(user.email)},
+    )
     return user
 
 
@@ -269,6 +280,7 @@ async def read_user_by_id(
 async def update_user(
     *,
     session: SessionDep,
+    current_user: CurrentUser,
     user_id: uuid.UUID,
     user_in: UserUpdate,
 ) -> Any:
@@ -292,6 +304,13 @@ async def update_user(
             )
 
     db_user = await crud.update_user(session=session, db_user=db_user, user_in=user_in)
+    await record_audit(
+        session,
+        action="user.update",
+        user_id=current_user.id,
+        entity_type="user",
+        entity_id=str(user_id),
+    )
     return db_user
 
 
@@ -311,6 +330,14 @@ async def delete_user(
         )
     statement = delete(Item).where(col(Item.owner_id) == user_id)
     await session.exec(statement)
+    await record_audit(
+        session,
+        action="user.delete",
+        user_id=current_user.id,
+        entity_type="user",
+        entity_id=str(user_id),
+        detail={"email": str(user.email)},
+    )
     await session.delete(user)
     await session.commit()
     return Message(message="User deleted successfully")

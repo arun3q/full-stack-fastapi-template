@@ -7,8 +7,10 @@ from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.access import billing_enabled, get_active_plan, plan_quota
+from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.jobs import send_email_background
+from app.core.notifications import notify
 from app.core.orgs import (
     ORG_ROLE_MEMBER,
     ORG_ROLE_OWNER,
@@ -110,6 +112,15 @@ async def create_organization(
         organization_id=org.id, user_id=current_user.id, role=ORG_ROLE_OWNER
     )
     session.add(member)
+    await record_audit(
+        session,
+        action="org.create",
+        user_id=current_user.id,
+        organization_id=org.id,
+        entity_type="organization",
+        entity_id=str(org.id),
+        detail={"name": body.name},
+    )
     await session.commit()
     await session.refresh(org)
     return org
@@ -242,6 +253,15 @@ async def invite_member(
         role=body.role,
         invited_by=current_user,
     )
+    await record_audit(
+        session,
+        action="org.invite",
+        user_id=current_user.id,
+        organization_id=org.id,
+        entity_type="invite",
+        entity_id=str(invite.id),
+        detail={"email": str(body.email), "role": body.role},
+    )
     await session.commit()
 
     invite_link = f"{settings.FRONTEND_HOST}/invite?token={invite.token}"
@@ -320,6 +340,23 @@ async def accept_invite(
     session.add(member)
     invite.status = INVITE_ACCEPTED
     session.add(invite)
+    # Notify whoever sent the invite
+    if invite.invited_by is not None:
+        await notify(
+            session,
+            user_id=invite.invited_by,
+            type="team",
+            title="Invitation accepted",
+            body=f"{current_user.email} joined your organization",
+        )
+    await record_audit(
+        session,
+        action="org.member_joined",
+        user_id=current_user.id,
+        organization_id=invite.organization_id,
+        entity_type="invite",
+        entity_id=str(invite.id),
+    )
     await session.commit()
     return Message(message="Invitation accepted")
 

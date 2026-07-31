@@ -3,15 +3,19 @@ from collections.abc import AsyncGenerator
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import delete
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.db import async_session_factory, init_db
+from app.core.ratelimit import limiter
 from app.main import app
 from app.models import Item, User
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
+
+# Disable slowapi rate limiting so the test suite isn't throttled.
+limiter.enabled = False
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)

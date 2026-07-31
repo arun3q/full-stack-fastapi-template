@@ -12,7 +12,7 @@ github-actions = [
 # pre-commit runs `mypy backend/app` from the repository root, so the config
 # for untyped third-party libraries lives here.
 [[tool.mypy.overrides]]
-module = ["authlib.*", "razorpay", "razorpay.*"]
+module = ["authlib.*", "razorpay", "razorpay.*", "boto3", "boto3.*"]
 ignore_missing_imports = true
 
 [tool.uv.workspace]

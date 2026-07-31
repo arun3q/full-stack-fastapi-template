@@ -17,6 +17,7 @@ from app.core.access import (
     is_staff,
     plan_quota,
 )
+from app.core.pagination import decode_cursor, encode_cursor
 from app.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -31,10 +32,12 @@ async def read_items(
     current_org: CurrentOrg,
     skip: int = 0,
     limit: int = 100,
+    cursor: str | None = None,
 ) -> Any:
     """
     Retrieve items. Staff+ see every item; everyone else sees their
-    organization's items.
+    organization's items. Supports keyset pagination via ``cursor``
+    (the ``next_cursor`` returned by the previous page).
     """
     if is_staff(current_user):
         count_statement = select(func.count()).select_from(Item)
@@ -54,13 +57,28 @@ async def read_items(
             select(Item)
             .where(Item.organization_id == current_org.id)
             .order_by(col(Item.created_at).desc())
-            .offset(skip)
             .limit(limit)
         )
+        if cursor:
+            keyset = decode_cursor(cursor)
+            if keyset is None:
+                raise HTTPException(status_code=400, detail="Invalid cursor")
+            cursor_created_at, cursor_id = keyset
+            statement = statement.where(
+                (col(Item.created_at) < cursor_created_at)
+                | ((col(Item.created_at) == cursor_created_at) & (Item.id < cursor_id))
+            )
+        else:
+            statement = statement.offset(skip)
         items = (await session.exec(statement)).all()
 
     items_public = [ItemPublic.model_validate(item) for item in items]
-    return ItemsPublic(data=items_public, count=count)
+    next_cursor = (
+        encode_cursor(items[-1].created_at, items[-1].id)
+        if items and len(items) == limit
+        else None
+    )
+    return ItemsPublic(data=items_public, count=count, next_cursor=next_cursor)
 
 
 @router.get(

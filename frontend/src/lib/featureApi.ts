@@ -67,6 +67,23 @@ export type OrganizationInvitePublic = {
   created_at: string | null
 }
 
+export type NotificationPublic = {
+  id: string
+  type: string
+  title: string
+  body: string | null
+  read_at: string | null
+  created_at: string | null
+}
+
+export type AdminOverview = {
+  users: number
+  organizations: number
+  items: number
+  subscriptions: number
+  active_subscriptions: number
+}
+
 export type ChatMessageInput = {
   role: string
   content: string
@@ -224,6 +241,27 @@ export const featureApi = {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
+
+  notifications: () =>
+    request<{ data: NotificationPublic[]; count: number }>("/notifications/", {
+      method: "GET",
+    }),
+
+  notificationUnreadCount: () =>
+    request<{ count: number }>("/notifications/unread-count", {
+      method: "GET",
+    }),
+
+  markNotificationRead: (id: string) =>
+    request<NotificationPublic>(`/notifications/${id}/read`, {
+      method: "POST",
+    }),
+
+  markAllNotificationsRead: () =>
+    request<{ count: number }>("/notifications/read-all", { method: "POST" }),
+
+  adminOverview: () =>
+    request<AdminOverview>("/admin/overview", { method: "GET" }),
 }
 
 export type StreamChatOptions = {
