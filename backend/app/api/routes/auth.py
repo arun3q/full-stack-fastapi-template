@@ -101,10 +101,24 @@ async def oauth_callback(
     if not user:
         raise HTTPException(status_code=500, detail="Failed to resolve user")
 
+    # Create a session (refresh token) so social logins can also refresh
+    from app.crud.sessions import create_session as create_auth_session
+
+    refresh_token, _ = await create_auth_session(
+        session,
+        user_id=user.id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await session.commit()
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         user.id, expires_delta=access_token_expires
     )
     return RedirectResponse(
-        url=f"{settings.FRONTEND_HOST}/auth/callback?token={access_token}"
+        url=(
+            f"{settings.FRONTEND_HOST}/auth/callback"
+            f"?token={access_token}&refresh={refresh_token}"
+        )
     )

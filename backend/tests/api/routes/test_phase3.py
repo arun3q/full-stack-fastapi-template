@@ -225,3 +225,51 @@ async def test_owner_cannot_leave_alone(client: TestClient, db: AsyncSession) ->
         headers=owner_headers,
     )
     assert r.status_code == 400
+
+
+async def test_cross_tenant_org_operations_blocked(
+    client: TestClient, db: AsyncSession
+) -> None:
+    """Users must not be able to suspend/delete/export another tenant's org."""
+    attacker_email, attacker_password = await _create_user(db)
+    attacker_headers = _headers(
+        _login(client, attacker_email, attacker_password)["access_token"]
+    )
+    attacker_org = client.post(
+        f"{settings.API_V1_STR}/organizations/",
+        headers=attacker_headers,
+        json={"name": "Attacker"},
+    ).json()
+
+    victim_email, victim_password = await _create_user(db)
+    victim_headers = _headers(
+        _login(client, victim_email, victim_password)["access_token"]
+    )
+    victim_org = client.post(
+        f"{settings.API_V1_STR}/organizations/",
+        headers=victim_headers,
+        json={"name": "Victim"},
+    ).json()
+
+    # Attacker operates with their own org in the header, targeting the victim's id
+    r = client.post(
+        f"{settings.API_V1_STR}/organizations/{victim_org['id']}/suspend",
+        headers=attacker_headers,
+    )
+    assert r.status_code == 403
+
+    r = client.get(
+        f"{settings.API_V1_STR}/organizations/{victim_org['id']}/export",
+        headers=attacker_headers,
+    )
+    assert r.status_code == 403
+
+    r = client.delete(
+        f"{settings.API_V1_STR}/organizations/{victim_org['id']}",
+        headers=attacker_headers,
+    )
+    assert r.status_code == 403
+
+    victim_row = await db.get(Organization, victim_org["id"])
+    assert victim_row is not None
+    assert victim_row.is_active

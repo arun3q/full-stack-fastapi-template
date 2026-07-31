@@ -30,15 +30,25 @@ const queryClient = new QueryClient({
 })
 
 async function handleApiError(error: Error) {
-  if (error instanceof ApiError && [401, 403].includes(error.status)) {
-    // Silent recovery: try to rotate the refresh token before logging out.
-    const refreshed = await refreshSession()
+  // 401: attempt a single-flight silent refresh before logging out.
+  if (error instanceof ApiError && error.status === 401) {
+    if (!refreshPromise) {
+      refreshPromise = refreshSession().finally(() => {
+        refreshPromise = null
+      })
+    }
+    const refreshed = await refreshPromise
     if (refreshed) {
       queryClient.invalidateQueries()
       return
     }
     clearTokens()
     window.location.href = "/login"
+    return
+  }
+  // 403: tenant/permission changed — refetch, don't enter a refresh loop.
+  if (error instanceof ApiError && error.status === 403) {
+    queryClient.invalidateQueries()
     return
   }
   if (error instanceof ApiError) {
@@ -51,6 +61,8 @@ async function handleApiError(error: Error) {
     toast.error(detail)
   }
 }
+
+let refreshPromise: Promise<boolean> | null = null
 
 const router = createRouter({ routeTree })
 declare module "@tanstack/react-router" {

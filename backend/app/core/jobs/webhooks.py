@@ -50,6 +50,7 @@ async def deliver_webhook_job(
             "X-Webhook-Event": delivery.event,
         }
         delivery.attempts = attempt
+        succeeded = False
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(
@@ -57,34 +58,30 @@ async def deliver_webhook_job(
                 )
             delivery.response_status = response.status_code
             delivery.response_body = response.text[:2000]
-            if 200 <= response.status_code < 300:
-                delivery.status = "success"
-            else:
-                delivery.status = "failed"
-            delivery.completed_at = get_utc_now()
-            await session.commit()
-            logger.info(
-                "Webhook delivery %s -> %s (%s)",
-                delivery.id,
-                webhook.url,
-                delivery.status,
-            )
+            succeeded = 200 <= response.status_code < 300
         except Exception as exc:
             logger.warning("Webhook delivery %s failed: %s", delivery.id, exc)
-            if attempt < MAX_WEBHOOK_ATTEMPTS:
-                backoff = WEBHOOK_BACKOFF_SECONDS[
-                    min(attempt - 1, len(WEBHOOK_BACKOFF_SECONDS) - 1)
-                ]
-                delivery.status = "pending"
-                delivery.next_retry_at = get_utc_now() + timedelta(seconds=backoff)
-                await session.commit()
-                await enqueue_job(
-                    "deliver_webhook_job",
-                    delivery_id=delivery_id,
-                    attempt=attempt + 1,
-                    _defer_by=backoff,
-                )
-            else:
-                delivery.status = "failed"
-                delivery.completed_at = get_utc_now()
-                await session.commit()
+
+        if succeeded:
+            delivery.status = "success"
+            delivery.completed_at = get_utc_now()
+            await session.commit()
+            logger.info("Webhook delivery %s -> %s (success)", delivery.id, webhook.url)
+        elif attempt < MAX_WEBHOOK_ATTEMPTS:
+            # Retry on both network errors and HTTP errors
+            backoff = WEBHOOK_BACKOFF_SECONDS[
+                min(attempt - 1, len(WEBHOOK_BACKOFF_SECONDS) - 1)
+            ]
+            delivery.status = "pending"
+            delivery.next_retry_at = get_utc_now() + timedelta(seconds=backoff)
+            await session.commit()
+            await enqueue_job(
+                "deliver_webhook_job",
+                delivery_id=delivery_id,
+                attempt=attempt + 1,
+                _defer_by=backoff,
+            )
+        else:
+            delivery.status = "failed"
+            delivery.completed_at = get_utc_now()
+            await session.commit()

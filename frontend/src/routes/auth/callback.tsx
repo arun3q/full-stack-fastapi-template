@@ -5,10 +5,12 @@ import { storeTokens } from "@/lib/featureApi"
 
 type SearchParams = {
   token?: string
+  refresh?: string
 }
 
 const validateSearch = (search: Record<string, unknown>): SearchParams => ({
   token: typeof search.token === "string" ? search.token : undefined,
+  refresh: typeof search.refresh === "string" ? search.refresh : undefined,
 })
 
 export const Route = createFileRoute("/auth/callback")({
@@ -18,16 +20,16 @@ export const Route = createFileRoute("/auth/callback")({
 
 function OAuthCallback() {
   const navigate = useNavigate()
-  const { token } = Route.useSearch()
+  const { token, refresh } = Route.useSearch()
 
   useEffect(() => {
     if (token) {
-      storeTokens(token)
+      storeTokens(token, refresh)
       navigate({ to: "/dashboard" })
     } else {
       navigate({ to: "/login" })
     }
-  }, [token, navigate])
+  }, [token, refresh, navigate])
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-4">

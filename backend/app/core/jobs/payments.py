@@ -53,6 +53,7 @@ async def process_payment_event_job(
     raw: str,
 ) -> None:
     """Persist a provider webhook event idempotently and reconcile subscription state."""
+    from app.core.access import invalidate_active_plan
     from app.core.payments import get_payment_provider
     from app.core.webhooks import dispatch_webhooks
 
@@ -107,6 +108,7 @@ async def process_payment_event_job(
                     and subscription.organization_id is not None
                 ):
                     event.organization_id = subscription.organization_id
+                    await invalidate_active_plan(subscription.organization_id)
                     if event_type in _LIFECYCLE_EVENTS:
                         await dispatch_webhooks(
                             session,

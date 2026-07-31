@@ -76,14 +76,18 @@ async def chat_stream(
         except Exception:
             yield 'data: {"event": "error", "message": "Stream failed"}\n\n'
             return
-        # Record metered usage for the completed call
-        await record_usage(
-            session,
-            organization_id=current_org.id,
-            meter="ai_calls",
-            amount=1,
-        )
-        await session.commit()
+        # Record metered usage for the completed call (fresh session: the
+        # request-scoped session may already be torn down during streaming)
+        from app.core.db import async_session_factory
+
+        async with async_session_factory() as meter_session:
+            await record_usage(
+                meter_session,
+                organization_id=current_org.id,
+                meter="ai_calls",
+                amount=1,
+            )
+            await meter_session.commit()
         yield 'data: {"event": "done"}\n\n'
 
     return StreamingResponse(

@@ -73,7 +73,9 @@ async def check_quota(
     quota = quota_for(plan, meter)
     if quota <= 0:
         return True
-    usage = await get_usage(session, organization_id=organization_id, meter=meter)
+    usage = await usage_this_month(
+        session, organization_id=organization_id, meter=meter
+    )
     return usage + amount <= quota
 
 

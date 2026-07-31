@@ -8,15 +8,24 @@ Lockout counters live in Redis and are skipped gracefully when Redis is down.
 import logging
 
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 from app.core.config import settings
 from app.core.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
+
+def _rate_key(request: Request) -> str:
+    """Use the first X-Forwarded-For IP when present (trusted proxy), else remote."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_rate_key,
     storage_uri=settings.RATE_LIMIT_STORAGE,
 )
 

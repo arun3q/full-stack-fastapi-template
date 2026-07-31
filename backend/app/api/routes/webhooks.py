@@ -8,7 +8,7 @@ from app.api.deps import (
     SessionDep,
     require_org_permission,
 )
-from app.core.webhooks import dispatch_webhooks
+from app.core.webhooks import dispatch_webhooks, validate_webhook_url
 from app.crud.webhooks import (
     create_webhook,
     get_webhook,
@@ -43,6 +43,10 @@ async def read_webhooks(session: SessionDep, current_org: CurrentOrg) -> Any:
 async def create_webhook_route(
     *, session: SessionDep, current_org: CurrentOrg, body: WebhookCreate
 ) -> Any:
+    try:
+        validate_webhook_url(body.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     webhook = await create_webhook(
         session,
         organization_id=current_org.id,
@@ -72,6 +76,11 @@ async def update_webhook_route(
     body: WebhookUpdate,
 ) -> Any:
     webhook = await _get_webhook(session, current_org, webhook_id)
+    if body.url is not None:
+        try:
+            validate_webhook_url(body.url)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
     webhook = await update_webhook(
         session,
         webhook,

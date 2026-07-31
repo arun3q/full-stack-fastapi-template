@@ -34,9 +34,13 @@ class IdempotencyMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Scope the idempotency key to the method + path so the same key on
-        # different endpoints can't collide.
-        cache_key = f"idem:{method}:{scope.get('path', '')}:{key}"
+        # Scope the idempotency key to the method + path + caller identity so
+        # different users/tenants can never collide or replay each other's bodies.
+        identity = _decode(headers.get(b"x-organization-id")) or "anon"
+        authorization = _decode(headers.get(b"authorization")) or ""
+        if authorization.startswith("Bearer "):
+            identity += ":" + authorization[7:24]  # short token fingerprint
+        cache_key = f"idem:{method}:{scope.get('path', '')}:{identity}:{key}"
         cached = await cache_get(cache_key)
         if cached is not None and isinstance(cached, dict):
             await _send_cached(cached, send)

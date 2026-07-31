@@ -2,10 +2,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from app.api.deps import CurrentUser, SessionDep, require_org_permission
+from app.api.deps import CurrentUser, SessionDep
 from app.core.access import billing_enabled, get_active_plan, plan_quota
 from app.core.audit import record_audit
 from app.core.config import settings
@@ -395,7 +395,6 @@ async def remove_member_route(
 
 @router.post(
     "/{organization_id}/suspend",
-    dependencies=[Depends(require_org_permission("org:update"))],
     response_model=OrganizationPublic,
 )
 async def suspend_organization(
@@ -405,6 +404,7 @@ async def suspend_organization(
     organization_id: uuid.UUID,
 ) -> Any:
     """Suspend an organization: revokes API keys and deactivates webhooks."""
+    await _require_permission(session, current_user, organization_id, "org:update")
     org = await get_organization(session, organization_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -429,7 +429,6 @@ async def suspend_organization(
 
 @router.delete(
     "/{organization_id}",
-    dependencies=[Depends(require_org_permission("org:delete"))],
     response_model=Message,
 )
 async def delete_organization(
@@ -439,6 +438,7 @@ async def delete_organization(
     organization_id: uuid.UUID,
 ) -> Message:
     """Delete an organization and all tenant data (GDPR)."""
+    await _require_permission(session, current_user, organization_id, "org:delete")
     org = await get_organization(session, organization_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -456,16 +456,14 @@ async def delete_organization(
     return Message(message="Organization deleted")
 
 
-@router.get(
-    "/{organization_id}/export",
-    dependencies=[Depends(require_org_permission("org:view"))],
-)
+@router.get("/{organization_id}/export")
 async def export_organization(
     session: SessionDep,
     current_user: CurrentUser,
     organization_id: uuid.UUID,
 ) -> dict[str, Any]:
     """Export all tenant data as JSON (GDPR data portability)."""
+    await _require_permission(session, current_user, organization_id, "org:view")
     org = await get_organization(session, organization_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -543,16 +541,16 @@ async def export_organization(
 
 @router.delete(
     "/{organization_id}/invites/{invite_id}",
-    dependencies=[Depends(require_org_permission("member:invite"))],
     response_model=Message,
 )
 async def revoke_invite(
     session: SessionDep,
-    _current_user: CurrentUser,
+    current_user: CurrentUser,
     organization_id: uuid.UUID,
     invite_id: uuid.UUID,
 ) -> Message:
     """Revoke (cancel) a pending invite."""
+    await _require_permission(session, current_user, organization_id, "member:invite")
     invite = await session.get(OrganizationInvite, invite_id)
     if invite is None or invite.organization_id != organization_id:
         raise HTTPException(status_code=404, detail="Invite not found")
@@ -565,7 +563,6 @@ async def revoke_invite(
 
 @router.post(
     "/{organization_id}/invites/{invite_id}/resend",
-    dependencies=[Depends(require_org_permission("member:invite"))],
     response_model=OrganizationInvitePublic,
 )
 async def resend_invite(
@@ -576,6 +573,7 @@ async def resend_invite(
     invite_id: uuid.UUID,
 ) -> Any:
     """Re-send a pending invite email."""
+    await _require_permission(session, current_user, organization_id, "member:invite")
     invite = await session.get(OrganizationInvite, invite_id)
     if invite is None or invite.organization_id != organization_id:
         raise HTTPException(status_code=404, detail="Invite not found")
@@ -615,7 +613,6 @@ async def decline_invite(
 
 @router.post(
     "/{organization_id}/transfer-ownership",
-    dependencies=[Depends(require_org_permission("member:remove"))],
     response_model=Message,
 )
 async def transfer_ownership(
@@ -626,6 +623,7 @@ async def transfer_ownership(
     user_id: uuid.UUID,
 ) -> Message:
     """Transfer ownership to another member (the owner becomes an admin)."""
+    await _require_permission(session, current_user, organization_id, "member:remove")
     target = await find_membership(
         session, organization_id=organization_id, user_id=user_id
     )
@@ -657,7 +655,6 @@ async def transfer_ownership(
 
 @router.post(
     "/{organization_id}/leave",
-    dependencies=[Depends(require_org_permission("org:view"))],
     response_model=Message,
 )
 async def leave_organization(
@@ -666,6 +663,7 @@ async def leave_organization(
     organization_id: uuid.UUID,
 ) -> Message:
     """Leave an organization. The owner must transfer ownership first."""
+    await _require_permission(session, current_user, organization_id, "org:view")
     membership = await find_membership(
         session, organization_id=organization_id, user_id=current_user.id
     )

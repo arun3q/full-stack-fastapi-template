@@ -81,3 +81,23 @@ async def test_get_active_plan_returns_plan(db: AsyncSession) -> None:
     active = await get_active_plan(db, membership.organization_id)
     assert active is not None
     assert active.slug == slug
+
+
+def test_validate_webhook_url_ssrf_guard() -> None:
+    from app.core.webhooks import validate_webhook_url
+
+    # Valid public URLs pass
+    validate_webhook_url("https://example.com/hook")
+    validate_webhook_url("http://example.com/hook")
+
+    # Private / metadata / scheme-less URLs are rejected
+    import pytest
+
+    with pytest.raises(ValueError):
+        validate_webhook_url("169.254.169.254/latest/meta-data")
+    with pytest.raises(ValueError):
+        validate_webhook_url("https://192.168.1.1/hook")
+    with pytest.raises(ValueError):
+        validate_webhook_url("https://10.0.0.1/hook")
+    with pytest.raises(ValueError):
+        validate_webhook_url("ftp://example.com/hook")

@@ -109,7 +109,22 @@ async def saml_acs(request: Request, session: SessionDep) -> RedirectResponse:
     access_token = security.create_access_token(
         user.id, expires_delta=access_token_expires
     )
-    url = f"{settings.FRONTEND_HOST}/auth/callback?token={access_token}"
+
+    # Create a session (refresh token) so SAML users can refresh too
+    from app.crud.sessions import create_session as create_auth_session
+
+    refresh_token, _ = await create_auth_session(
+        session,
+        user_id=user.id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await session.commit()
+
+    url = (
+        f"{settings.FRONTEND_HOST}/auth/callback"
+        f"?token={access_token}&refresh={refresh_token}"
+    )
     response = RedirectResponse(url=url)
     if settings.AUTH_TOKEN_IN_COOKIE:
         response.set_cookie(
