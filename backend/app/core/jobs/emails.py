@@ -32,4 +32,7 @@ async def send_email_background(
         html_content=html_content,
     )
     if job_id is None and settings.emails_enabled:
-        send_email(email_to=email_to, subject=subject, html_content=html_content)
+        # Keep SMTP off the event loop in the inline fallback path too
+        await asyncio.to_thread(
+            send_email, email_to=email_to, subject=subject, html_content=html_content
+        )

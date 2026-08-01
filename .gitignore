@@ -1,8 +1,27 @@
-.vscode/*
-!.vscode/extensions.json
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+htmlcov/
+*.egg-info/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/openapi.json
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Docker / CI artifacts
 backend/app/frontend/
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
+backups/

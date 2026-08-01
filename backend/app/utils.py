@@ -53,7 +53,13 @@ def send_email(
     if settings.SMTP_PASSWORD:
         smtp_options["password"] = settings.SMTP_PASSWORD
     response = message.send(to=email_to, smtp=smtp_options)
-    logger.info(f"send email result: {response}")
+    logger.info("send email result: %s", response)
+    # The email library returns truthy status_code on success (200/250); a
+    # non-2xx means the message was rejected and must be retried.
+    if getattr(response, "status_code", None) not in (None, True):
+        code = getattr(response, "status_code", None)
+        if isinstance(code, int) and not (200 <= code < 300):
+            raise RuntimeError(f"SMTP send failed with status {code}")
 
 
 def generate_test_email(email_to: str) -> EmailData:

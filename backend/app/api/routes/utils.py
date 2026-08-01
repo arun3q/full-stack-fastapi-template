@@ -38,12 +38,12 @@ async def health_check(session: SessionDep) -> bool:
 
 @router.get("/ready")
 async def readiness(session: SessionDep) -> dict[str, str]:
-    """Readiness: checks the database and Redis (best-effort)."""
+    """Readiness: checks the database and Redis (strict; 503 when Redis is down)."""
     await session.exec(select(1))
-    redis_ok = True
     try:
         await redis_client.ping()
     except Exception:
-        redis_ok = False
-    status = "ok" if redis_ok else "degraded"
-    return {"status": status, "redis": "ok" if redis_ok else "down"}
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="Redis is unavailable")
+    return {"status": "ok", "redis": "ok"}

@@ -229,9 +229,23 @@ async def test_csrf_protection_cookie_mode(
 
 
 def test_readiness_endpoint(client: TestClient) -> None:
-    r = client.get(f"{settings.API_V1_STR}/utils/ready")
+    from unittest.mock import AsyncMock, patch
+
+    with patch("app.core.redis.redis_client.ping", AsyncMock(return_value=True)):
+        r = client.get(f"{settings.API_V1_STR}/utils/ready")
     assert r.status_code == 200
-    assert r.json()["status"] in ("ok", "degraded")
+    assert r.json()["status"] == "ok"
+
+
+def test_readiness_503_when_redis_down(client: TestClient) -> None:
+    from unittest.mock import AsyncMock, patch
+
+    with patch(
+        "app.core.redis.redis_client.ping",
+        AsyncMock(side_effect=Exception("down")),
+    ):
+        r = client.get(f"{settings.API_V1_STR}/utils/ready")
+    assert r.status_code == 503
 
 
 def test_health_check_requires_db(client: TestClient) -> None:

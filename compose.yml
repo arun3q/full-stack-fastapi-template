@@ -217,6 +217,9 @@ services:
       - traefik.http.middlewares.security-headers.headers.frameDeny=true
       - traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true
       - traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin
+      - traefik.http.middlewares.security-headers.headers.contentSecurityPolicy=default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+      - traefik.http.middlewares.security-headers.headers.permissionsPolicy=camera=(), microphone=(), geolocation=(), payment=()
+      - traefik.http.middlewares.security-headers.headers.stsPreload=true
 
       # Enable redirection for HTTP and HTTPS
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.middlewares=https-redirect

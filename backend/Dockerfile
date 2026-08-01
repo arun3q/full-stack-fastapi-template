@@ -62,4 +62,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 WORKDIR /app/backend/
 
-CMD ["fastapi", "run", "--workers", "4"]
+# Run as a non-root user (security hardening)
+RUN useradd --create-home --uid 1000 appuser
+USER appuser
+
+CMD ["fastapi", "run", "--workers", "4", "--proxy-headers", "--limit-max-requests", "1000"]

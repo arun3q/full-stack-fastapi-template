@@ -42,7 +42,11 @@ services:
 
   worker:
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), 2)"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket, subprocess, sys; socket.create_connection(('redis',6379),2); sys.exit(0 if any('arq' in p for p in subprocess.check_output(['ps','-eo','comm']).decode().splitlines()) else 1)"
       interval: 30s
       timeout: 5s
       retries: 5

@@ -36,17 +36,32 @@ jobs:
         with:
           persist-credentials: false
       - name: Build image (tagged with commit SHA)
+        env:
+          TAG: ${{ github.sha }}
         run: docker compose -f compose.yml -f compose.prod.yml --project-name ${{ secrets.STACK_NAME_PRODUCTION }} build
-      - name: Deploy (pull + recreate)
-        run: docker compose -f compose.yml -f compose.prod.yml --project-name ${{ secrets.STACK_NAME_PRODUCTION }} up -d --pull always --force-recreate
+      - name: Push image (SHA tag)
+        env:
+          TAG: ${{ github.sha }}
+        run: docker compose -f compose.yml -f compose.prod.yml --project-name ${{ secrets.STACK_NAME_PRODUCTION }} push
+      - name: Deploy (recreate)
+        env:
+          TAG: ${{ github.sha }}
+        run: docker compose -f compose.yml -f compose.prod.yml --project-name ${{ secrets.STACK_NAME_PRODUCTION }} up -d --force-recreate
       - name: Wait for readiness
+        env:
+          TAG: ${{ github.sha }}
+          STACK_NAME: ${{ secrets.STACK_NAME_PRODUCTION }}
         run: |
           for i in $(seq 1 60); do
             if curl -fsS "http://localhost/api/v1/utils/ready"; then
               echo "backend ready"
+              # Roll the 'latest' tag forward only after a healthy deploy
+              docker tag "${DOCKER_IMAGE_BACKEND}:${TAG}" "${DOCKER_IMAGE_BACKEND}:latest"
+              docker push "${DOCKER_IMAGE_BACKEND}:latest"
               exit 0
             fi
             sleep 5
           done
           echo "backend did not become ready" >&2
+          echo "Rollback: docker compose -f compose.yml -f compose.prod.yml up -d --force-recreate with TAG=<previous-sha>" >&2
           exit 1

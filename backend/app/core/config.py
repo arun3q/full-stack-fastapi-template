@@ -1,6 +1,6 @@
 import secrets
 import warnings
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
     AnyUrl,
@@ -30,7 +30,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    # Per-process random fallback; rejected in non-local environments so a
+    # multi-worker deploy can't silently diverge on JWT verification.
+    _AUTO_SECRET_KEY: ClassVar[str] = secrets.token_urlsafe(32)
+    SECRET_KEY: str = _AUTO_SECRET_KEY
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -199,6 +202,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _enforce_non_default_secrets(self) -> Self:
+        if self.ENVIRONMENT != "local" and self.SECRET_KEY == self._AUTO_SECRET_KEY:
+            raise ValueError(
+                "SECRET_KEY must be set explicitly in non-local environments"
+            )
         self._check_default_secret("SECRET_KEY", self.SECRET_KEY)
         self._check_default_secret("POSTGRES_PASSWORD", self.POSTGRES_PASSWORD)
         self._check_default_secret(

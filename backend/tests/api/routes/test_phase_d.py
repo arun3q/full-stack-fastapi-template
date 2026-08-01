@@ -19,9 +19,7 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def test_email_uniqueness_is_case_insensitive(
-    client: TestClient, db: AsyncSession
-) -> None:
+async def test_email_uniqueness_is_case_insensitive(db: AsyncSession) -> None:
     email = random_email()
     password = random_lower_string()
     await crud.create_user(
@@ -63,7 +61,9 @@ async def test_org_delete_cascades_tenant_data(
     ).json()
 
     # Delete the org (GDPR)
-    r = client.delete(f"{settings.API_V1_STR}/organizations/{org['id']}", headers=headers)
+    r = client.delete(
+        f"{settings.API_V1_STR}/organizations/{org['id']}", headers=headers
+    )
     assert r.status_code == 200
 
     # The item must be gone (cascade), not orphaned
@@ -90,7 +90,9 @@ async def test_check_constraints_exist(db: AsyncSession) -> None:
 async def test_email_lower_unique_index(db: AsyncSession) -> None:
     rows = (
         await db.execute(
-            text("SELECT indexname FROM pg_indexes WHERE indexname = 'uq_user_email_lower'")
+            text(
+                "SELECT indexname FROM pg_indexes WHERE indexname = 'uq_user_email_lower'"
+            )
         )
     ).all()
     assert len(rows) == 1

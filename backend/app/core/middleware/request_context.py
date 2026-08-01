@@ -1,5 +1,6 @@
 """Assigns X-Request-ID, updates the logging context, and records metrics."""
 
+import re
 import time
 import uuid
 from typing import Any
@@ -13,6 +14,17 @@ from app.core.middleware.metrics import record_request
 
 def _decode(value: bytes | None) -> str | None:
     return value.decode("latin-1") if value else None
+
+
+_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def normalize_path(path: str) -> str:
+    """Collapse UUIDs/trailing ids so metric labels stay bounded."""
+    path = _UUID_RE.sub("{id}", path)
+    return path
 
 
 class RequestContextMiddleware:
@@ -60,7 +72,7 @@ class RequestContextMiddleware:
                 span.end()
             record_request(
                 scope.get("method", ""),
-                scope.get("path", ""),
+                normalize_path(scope.get("path", "")),
                 status_holder["status"],
                 time.perf_counter() - start,
             )

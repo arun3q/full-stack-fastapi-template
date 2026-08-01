@@ -36,9 +36,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Build image (tagged with commit SHA)
+        env:
+          TAG: ${{ github.sha }}
         run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} build
-      - name: Deploy (pull + recreate)
-        run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} up -d --pull always --force-recreate
+      - name: Deploy (recreate)
+        env:
+          TAG: ${{ github.sha }}
+        run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} up -d --force-recreate
       - name: Wait for readiness
         env:
           DOMAIN: ${{ secrets.DOMAIN_STAGING }}

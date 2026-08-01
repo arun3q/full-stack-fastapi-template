@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 
 
 async def startup(_ctx: dict[str, Any]) -> None:
+    from app.core.config import settings
+    from app.core.telemetry import init_telemetry
+
+    init_telemetry()
+    if settings.SENTRY_DSN:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=str(settings.SENTRY_DSN),
+            environment=settings.ENVIRONMENT,
+            traces_sample_rate=0.1,
+        )
+        logger.info("Worker Sentry enabled")
     logger.info("Worker started")
 
 
@@ -57,6 +70,9 @@ class WorkerSettings:
     max_jobs = 10
     job_timeout = 300
     keep_result = 3600
+    retry_jobs = True
+    max_tries = 3
+    job_retry_seconds = 30
 
 
 async def _run() -> None:

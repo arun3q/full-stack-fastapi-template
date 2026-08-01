@@ -20,6 +20,8 @@ from app.core.middleware import (
     IdempotencyMiddleware,
     RequestContextMiddleware,
 )
+from app.core.middleware.access_log import AccessLogMiddleware
+from app.core.middleware.body_limit import BodySizeLimitMiddleware
 from app.core.ratelimit import limiter
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -78,6 +80,8 @@ if settings.all_cors_origins:
         allow_headers=["*"],
     )
 
+app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(AccessLogMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(RequestContextMiddleware)
