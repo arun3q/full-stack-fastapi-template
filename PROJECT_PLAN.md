@@ -138,3 +138,154 @@ findings, all fixed and re-verified:
 Known residual caveats (acceptable for template): DNS-rebinding on webhook URLs
 (hostname→private-IP at delivery time), XFF spoofing if the proxy doesn't strip
 the header, idempotency fingerprint changes after token rotation.
+
+---
+
+# Round 2 — Deep-dive gap closure (6-agent audit, 2026-08-01)
+
+Second-pass audit focused on what is STILL missing for production-grade
+enterprise multi-tenant SaaS. Six domain agents audited tenancy/RBAC, billing,
+caching/perf, DB/replicas, deploy/observability, and frontend/DX.
+
+Excluded as false positives: `deps.py:64` `except A, B:` (valid PEP 758 syntax
+on the Python 3.14 target; the app imports and 128 tests pass).
+
+## Phase A — Identity, RBAC & tenant isolation (correctness/security)
+
+- [ ] **Owner-demote bug** — `update_member_role_route` checks the role *after* mutation, so
+      demoting the owner leaves the org with no owner (`organizations.py:358`). Read current
+      role first; require `member:remove` for owner targets; forbid owner count → 0.
+- [ ] **Invite role whitelist** — invites accept `role:"owner"` / arbitrary strings
+      (`organizations.py:189`). Restrict to `{admin, member, viewer}`.
+- [ ] **Enforce API-key scopes** — `parse_scopes` is decorative; SCIM accepts any key.
+      Require `scim` scope in `get_scim_context`; add scope→action checks.
+- [ ] **Suspended orgs still operable** — `_get_membership`/`_require_permission` never check
+      `org.is_active`, so path-param routes (invite/export/delete/transfer) work on suspended
+      orgs. Add `is_active` check; resume/unsuspend endpoint.
+- [ ] **SCIM deactivation is global** — `PATCH active:false`/`DELETE` sets `User.is_active`,
+      deactivating the user in every org. Scope to the membership instead.
+- [ ] **File ACL** — object keys have no org prefix and URLs are public; add
+      `uploads/{org_id}/…` keys + signed/org-scoped download endpoint.
+- [ ] **Session revocation on credential change** — revoke sessions on password
+      change/reset + email change; add a token-version claim so old JWTs die.
+- [ ] **Email change re-verification** — new email currently keeps `is_verified=True`;
+      send verification + revoke sessions.
+- [ ] **Account-deletion guards** — deleting a user who owns orgs leaves them ownerless and
+      cascade-deletes cross-org items. Block while owner of orgs with members.
+- [ ] **Deactivated-user auth guard** — `/auth/refresh`, SAML, and OAuth ignore
+      `is_active`. Guard all three; revoke sessions on deactivate.
+- [ ] **Server-side logout** — frontend `logout()` only clears localStorage; call
+      `/auth/logout` to revoke the refresh session.
+- [ ] **SAML account-takeover guard** — ACS logs into any account whose email matches
+      without linkage consent + ignores `is_active`. Refuse/link only for OAuth-only
+      accounts; require admin approval on collision.
+- [ ] **SCIM PatchOp/Role/PUT** — implement `Operations[]` parsing, role/group writes,
+      email-rename reconciliation.
+- [ ] **RLS GUC hardening** — set `app.current_org_id` per transaction (begin event) on
+      writer/replica/worker sessions and consider deny-unset policies (see Phase D1).
+
+## Phase B — Billing completeness (revenue correctness)
+
+- [ ] **Per-seat billing** — `Subscription.quantity` is dead; sync quantity to the provider
+      on member join/leave and set it on checkout.
+- [ ] **change_plan price resolution** — a plan without `provider_plan_id` silently falls
+      back to the global price (`payments.py:124-141`), mapping a foreign price onto the
+      wrong plan. Reject unset `provider_plan_id`.
+- [ ] **Webhook enqueue inline fallback** — Redis down ⇒ `enqueue_job` returns `None` but
+      webhook still 200s ⇒ silent revenue-event loss. Process inline as fallback.
+- [ ] **Event coverage** — handle `invoice.payment_succeeded`, `charge.refunded`,
+      `payment_intent.succeeded/failed`, `subscription.paused/resumed`, `checkout.expired`.
+- [ ] **Seat-quota enforcement in SCIM/invite-accept** — provisioning bypasses `max_seats`;
+      accept-invite doesn't re-check (TOCTOU).
+- [ ] **One-active-sub per org at DB level** — partial unique index
+      `ON subscription(organization_id) WHERE status IN ('active','trialing','past_due')`.
+- [ ] **Admin plan CRUD** + downgrade validation (usage exceeds new plan quotas → reject).
+- [ ] **Invoice model + PaymentEvent.subscription_id**; MRR fixes (currency, quantity,
+      trialing/past_due, ARR, churn).
+- [ ] **Razorpay** — change-plan handling, `payment.captured/failed` events, replay-safe
+      HMAC timestamps.
+- [ ] **Redis-down duplicate guard** — use `INSERT … ON CONFLICT DO NOTHING` for event
+      dedupe; raise `PaymentEvent.raw` limit.
+
+## Phase C — Caching & performance
+
+- [ ] **FIX cached-decorator serialization bug** — `cache_set` stores `str(model)`; on a
+      cache hit `/payments/plans` and `/public/config` return the model's `str()` and 500.
+      Use `value.model_dump(mode="json")`; version the cache prefix (`cache:v1:`).
+- [ ] **get_active_plan** — cache misses (sentinel) + cache the full plan payload, not just
+      the id; single-flight/stampede protection on hot keys.
+- [ ] **Missing index** — `Notification.user_id` (polled unread-count seq-scans).
+- [ ] **N+1 kills** — `read_members`, `read_my_organizations`, `admin_overview`,
+      `list_scim_users` (batch joins / GROUP BY / selectinload).
+- [ ] **count_items on every list** — drop/skip count under cursor pagination.
+- [ ] **Composite indexes** — `(organization_id, created_at DESC)` for items/memberships/
+      invites/subscription lookups.
+- [ ] **GZipMiddleware** + `Cache-Control`/ETag on cached GETs.
+
+## Phase D — DB integrity & replicas
+
+- [ ] **RLS × PgBouncer transaction pooling** — the tenant GUC is transaction-local and
+      lost after any `commit()`; under `POOL_MODE: transaction` a post-commit read
+      autobegins on a different pooled connection with no GUC, silently disabling
+      isolation (policies are permissive-when-unset). Set the GUC via a session begin event
+      (all session paths incl. replica + worker) or make policies deny-unset.
+- [ ] **Org delete does not delete tenant data** — ORM-vs-FK `ondelete` mismatch means
+      `session.delete(org)` SET-NULLs items/subscriptions instead of cascading (GDPR
+      contract broken). Add `passive_deletes=True`/`cascade_delete=True`.
+- [ ] **Case-insensitive email uniqueness** + normalize `email.lower()`.
+- [ ] **CHECK constraints** — roles, statuses, `amount_cents >= 0`, `quantity > 0`.
+- [ ] **JSON→JSONB** for quotas/features/scopes/events (raise truncating limits).
+- [ ] **`alembic check` in CI** to catch model/migration drift.
+- [ ] **Backups** — scheduled `pg_dump` + offsite copy.
+- [ ] **Timeouts** — `statement_timeout`/`connect_timeout` on engines.
+- [ ] **Replica plumbing** — real replica service + `READ_REPLICA_URL` in `compose.prod`;
+      enforce read-only on read sessions; route auth reads to replica or document the
+      tradeoff; replica-down fallback; force-writer path for read-your-writes
+      (`POST /items/` → `GET /items/`).
+
+## Phase E — Deploy, observability & hardening
+
+- [ ] **CSP + Permissions-Policy + TLS minimum version** (Traefik).
+- [ ] **`.env` hygiene** — stop tracking `.env`, add `.gitignore` + real `.env.example`
+      documenting all new settings.
+- [ ] **SECRET_KEY required in non-local** — random per-worker default causes intermittent
+      401s with `--workers 4`.
+- [ ] **Non-root Docker user**; pin image versions/digests; `bun install --frozen-lockfile`.
+- [ ] **Body-size limit** middleware; uvicorn `--limit-max-requests`, `--proxy-headers`.
+- [ ] **CD ships the built image** — `docker compose push` + `TAG=${{ github.sha }}`
+      immutable tags + rollback on failed readiness.
+- [ ] **CI hardening** — `uv audit`, gitleaks, `alembic check`, Docker layer caching.
+- [ ] **Worker observability** — Sentry + OTel in worker, real healthcheck (ARQ process),
+      ARQ queue-depth/job-duration/error metrics.
+- [ ] **Metrics cardinality** — label with route template, not raw path.
+- [ ] **JSON access-log** middleware.
+- [ ] **SMTP reliability** — check `status_code`, raise on failure, retry `send_email_job`;
+      add payment/security email templates.
+- [ ] **Readiness returns 503** when Redis is down; wire Prometheus bearer token to match
+      `METRICS_TOKEN`.
+
+## Phase F — Frontend & DX
+
+- [ ] **Regenerate OpenAPI client** — missing `changePlan`, org lifecycle
+      (suspend/delete/export), invite revoke/resend/decline, transfer, leave. Commit
+      `openapi.json`; add `git diff --exit-code` sync check in CI.
+- [ ] **401 mutation recovery** — failed mutations are silently dropped after single-flight
+      refresh; queue/retry or surface the error.
+- [ ] **Server-side logout** in `useAuth.logout`.
+- [ ] **Billing** — usage metering bars + change-plan UI (upgrade/downgrade currently 409s).
+- [ ] **Org settings page** — suspend/delete/export/transfer/leave.
+- [ ] **Members page** — revoke/resend invites, confirm dialogs, loading/empty states.
+- [ ] **New pages** — API keys, webhook manager (create/test/deliveries), 2FA, active
+      sessions, admin audit-log tab, notifications center.
+- [ ] **i18n** — translate app body copy into `es.json`; locale-aware price/date formatting;
+      sync `html lang`.
+- [ ] **Vitest unit tests** + `frontend/.env.example`; chat input a11y (`aria-label`,
+      `aria-live`); docs for new features.
+
+## Top priorities (if implementing in one pass)
+1. Round-2 P0 bugs: cached-decorator 500, owner-demote, API-key scope enforcement,
+   suspended-org path routes, change_plan price fallback, webhook enqueue loss,
+   org-delete cascade, session revocation on credential change.
+2. Per-seat billing + event coverage + DB-level uniqueness (revenue correctness).
+3. RLS×PgBouncer GUC fix + replica plumbing.
+4. Frontend: regenerate client, usage/change-plan/org-settings UI, 401 mutation retry.
