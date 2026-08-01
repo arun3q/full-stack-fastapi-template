@@ -151,8 +151,8 @@ async def set_tenant_context(
     if not settings.ENABLE_RLS:
         return
     org_id = str(organization_id) if organization_id is not None else ""
-    is_admin = "true" if is_admin else "false"
-    _tenant_guc[session.sync_session] = {"org": org_id, "admin": is_admin}
+    admin_flag = "true" if is_admin else "false"
+    _tenant_guc[session.sync_session] = {"org": org_id, "admin": admin_flag}
     connection = await session.connection()
     await connection.execute(
         text("SELECT set_config('app.current_org_id', :org, true)"),
@@ -160,7 +160,7 @@ async def set_tenant_context(
     )
     await connection.execute(
         text("SELECT set_config('app.is_admin', :admin, true)"),
-        {"admin": is_admin},
+        {"admin": admin_flag},
     )
 
 
