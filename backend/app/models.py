@@ -128,8 +128,10 @@ class Organization(SQLModel, table=True):
     invites: list[OrganizationInvite] = Relationship(
         back_populates="organization", cascade_delete=True
     )
-    items: list[Item] = Relationship(back_populates="organization")
-    subscriptions: list[Subscription] = Relationship(back_populates="organization")
+    items: list[Item] = Relationship(back_populates="organization", cascade_delete=True)
+    subscriptions: list[Subscription] = Relationship(
+        back_populates="organization", cascade_delete=True
+    )
 
 
 class OrganizationCreate(SQLModel):

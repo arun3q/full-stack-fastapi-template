@@ -23,7 +23,11 @@ async def create_user(*, session: AsyncSession, user_create: UserCreate) -> User
         extra["hashed_password"] = get_password_hash(user_create.password)
     else:
         extra["hashed_password"] = None
-    db_obj = User.model_validate(user_create, update=extra)
+    # Normalize emails to lowercase for case-insensitive uniqueness
+    normalized = user_create.model_copy(
+        update={"email": (user_create.email or "").lower()}
+    )
+    db_obj = User.model_validate(normalized, update=extra)
     session.add(db_obj)
     await session.flush()
     # Every user gets a personal organization (tenant) out of the box
@@ -50,7 +54,9 @@ async def update_user(
 
 
 async def get_user_by_email(*, session: AsyncSession, email: str) -> User | None:
-    statement = select(User).where(User.email == email)
+    from sqlmodel import func
+
+    statement = select(User).where(func.lower(User.email) == email.lower())
     result = await session.exec(statement)
     return result.first()
 

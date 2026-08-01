@@ -32,6 +32,15 @@ jobs:
       - name: Migrate DB
         run: uv run bash scripts/prestart.sh
         working-directory: backend
+      - name: Check model/migration drift
+        run: uv run alembic check
+        working-directory: backend
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: changethis
+          POSTGRES_DB: app
       - name: Run tests
         run: uv run bash scripts/tests-start.sh "Coverage for ${{ github.sha }}"
         working-directory: backend

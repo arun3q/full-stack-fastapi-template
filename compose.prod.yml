@@ -30,6 +30,9 @@ services:
     environment:
       POSTGRES_SERVER: pgbouncer
       POSTGRES_PORT: "5432"
+      # Point READ_REPLICA_URL at a streaming-replica host (async driver, e.g.
+      # postgresql+psycopg://user:pass@replica-host:5432/app). Unset = read from primary.
+      READ_REPLICA_URL: ${READ_REPLICA_URL:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/ready"]
       interval: 10s
