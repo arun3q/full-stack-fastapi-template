@@ -11,7 +11,7 @@ from app.api.deps import (
     SessionDep,
     require_org_permission,
 )
-from app.core.access import invalidate_active_plan
+from app.core.access import get_active_plan, invalidate_active_plan
 from app.core.cache import cached
 from app.core.config import settings
 from app.core.jobs import enqueue_job
@@ -333,3 +333,38 @@ async def billing_portal(session: SessionDep, current_org: CurrentOrg) -> Any:
     except PaymentError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"url": url}
+
+
+@router.get("/usage", response_model=dict[str, Any])
+async def get_usage_metrics(session: SessionDep, current_org: CurrentOrg) -> Any:
+    """Current metered usage vs plan quotas (for the billing UI)."""
+    from app.core.access import plan_quota
+    from app.core.usage import usage_this_month
+
+    plan = await get_active_plan(session, current_org.id)
+    usage: dict[str, Any] = {"plan": plan.slug if plan else None}
+    for meter in ("ai_calls", "storage_bytes", "max_items", "max_seats"):
+        limit = plan_quota(plan, meter, default=0) if plan else 0
+        if meter in ("max_items", "max_seats"):
+            from app.crud.organizations import count_members
+
+            if meter == "max_seats":
+                used = await count_members(session, current_org.id)
+            else:
+                from sqlmodel import func
+
+                from app.models import Item
+
+                used = (
+                    await session.exec(
+                        select(func.count())
+                        .select_from(Item)
+                        .where(Item.organization_id == current_org.id)
+                    )
+                ).one()
+        else:
+            used = await usage_this_month(
+                session, organization_id=current_org.id, meter=meter
+            )
+        usage[meter] = {"used": used, "limit": limit}
+    return usage

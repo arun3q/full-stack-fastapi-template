@@ -28,7 +28,11 @@
     "admin": "Admin",
     "notifications": "Notifications",
     "markAllRead": "Mark all read",
-    "allCaughtUp": "You're all caught up"
+    "allCaughtUp": "You're all caught up",
+    "orgSettings": "Org settings",
+    "apiKeys": "API keys",
+    "webhooks": "Webhooks",
+    "security": "Security"
   },
   "auth": {
     "loginTitle": "Login to your account",

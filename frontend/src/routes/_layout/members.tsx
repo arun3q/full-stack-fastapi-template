@@ -105,6 +105,21 @@ function MembersPage() {
     onError: (error: Error) => showErrorToast(error.message),
   })
 
+  const revokeInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => featureApi.revokeInvite(orgId!, inviteId),
+    onSuccess: () => {
+      showSuccessToast("Invite revoked")
+      queryClient.invalidateQueries({ queryKey: ["invites"] })
+    },
+    onError: (error: Error) => showErrorToast(error.message),
+  })
+
+  const resendInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => featureApi.resendInvite(orgId!, inviteId),
+    onSuccess: () => showSuccessToast("Invite re-sent"),
+    onError: (error: Error) => showErrorToast(error.message),
+  })
+
   const roleMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
       featureApi.changeMemberRole(orgId!, userId, role),
@@ -222,7 +237,15 @@ function MembersPage() {
                         variant="ghost"
                         size="icon"
                         aria-label="Remove member"
-                        onClick={() => removeMutation.mutate(member.user_id)}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Remove ${member.email} from this organization?`,
+                            )
+                          ) {
+                            removeMutation.mutate(member.user_id)
+                          }
+                        }}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -247,6 +270,7 @@ function MembersPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -258,6 +282,34 @@ function MembersPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{invite.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {invite.status === "pending" ? (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={resendInviteMutation.isPending}
+                            onClick={() =>
+                              resendInviteMutation.mutate(invite.id)
+                            }
+                          >
+                            Resend
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={revokeInviteMutation.isPending}
+                            onClick={() => {
+                              if (window.confirm("Revoke this invite?")) {
+                                revokeInviteMutation.mutate(invite.id)
+                              }
+                            }}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))}

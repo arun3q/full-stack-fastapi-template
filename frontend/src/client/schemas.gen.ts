@@ -249,6 +249,17 @@ export const AuditLogsPublicSchema = {
         count: {
             type: 'integer',
             title: 'Count'
+        },
+        next_cursor: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Next Cursor'
         }
     },
     type: 'object',
@@ -875,10 +886,113 @@ export const OrganizationUpdateSchema = {
                 }
             ],
             title: 'Branding'
+        },
+        is_active: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Is Active'
         }
     },
     type: 'object',
     title: 'OrganizationUpdate'
+} as const;
+
+export const PlanCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 100,
+            title: 'Name'
+        },
+        slug: {
+            type: 'string',
+            maxLength: 100,
+            title: 'Slug'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 500
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        amount_cents: {
+            type: 'integer',
+            title: 'Amount Cents'
+        },
+        currency: {
+            type: 'string',
+            maxLength: 10,
+            title: 'Currency',
+            default: 'usd'
+        },
+        billing_interval: {
+            type: 'string',
+            maxLength: 20,
+            title: 'Billing Interval',
+            default: 'month'
+        },
+        trial_days: {
+            type: 'integer',
+            title: 'Trial Days',
+            default: 0
+        },
+        provider_plan_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Plan Id'
+        },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active',
+            default: true
+        },
+        features: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 2000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Features'
+        },
+        quotas: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 2000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Quotas'
+        }
+    },
+    type: 'object',
+    required: ['name', 'slug', 'amount_cents'],
+    title: 'PlanCreate'
 } as const;
 
 export const PlanPublicSchema = {
@@ -923,6 +1037,11 @@ export const PlanPublicSchema = {
             type: 'boolean',
             title: 'Is Active'
         },
+        trial_days: {
+            type: 'integer',
+            title: 'Trial Days',
+            default: 0
+        },
         features: {
             anyOf: [
                 {
@@ -949,6 +1068,132 @@ export const PlanPublicSchema = {
     type: 'object',
     required: ['id', 'name', 'slug', 'amount_cents', 'currency', 'billing_interval', 'is_active'],
     title: 'PlanPublic'
+} as const;
+
+export const PlanUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 100,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 500
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        amount_cents: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Amount Cents'
+        },
+        currency: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 10
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Currency'
+        },
+        billing_interval: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 20
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Billing Interval'
+        },
+        trial_days: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Trial Days'
+        },
+        provider_plan_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Plan Id'
+        },
+        features: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 2000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Features'
+        },
+        quotas: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 2000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Quotas'
+        },
+        is_active: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Is Active'
+        }
+    },
+    type: 'object',
+    title: 'PlanUpdate'
 } as const;
 
 export const PlansPublicSchema = {
@@ -1041,6 +1286,180 @@ export const ResendVerificationEmailSchema = {
     type: 'object',
     required: ['email'],
     title: 'ResendVerificationEmail'
+} as const;
+
+export const ScimNameSchema = {
+    properties: {
+        formatted: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Formatted'
+        },
+        givenName: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Givenname'
+        },
+        familyName: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Familyname'
+        }
+    },
+    type: 'object',
+    title: 'ScimName'
+} as const;
+
+export const ScimPatchOperationSchema = {
+    properties: {
+        op: {
+            type: 'string',
+            title: 'Op',
+            default: 'replace'
+        },
+        path: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Path'
+        },
+        value: {
+            title: 'Value'
+        }
+    },
+    type: 'object',
+    title: 'ScimPatchOperation'
+} as const;
+
+export const ScimPatchRequestSchema = {
+    properties: {
+        schemas: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Schemas',
+            default: ['urn:ietf:params:scim:api:messages:2.0:PatchOp']
+        },
+        active: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active'
+        },
+        displayName: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Displayname'
+        },
+        name: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/ScimName'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        Operations: {
+            anyOf: [
+                {
+                    items: {
+                        '$ref': '#/components/schemas/ScimPatchOperation'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Operations'
+        }
+    },
+    type: 'object',
+    title: 'ScimPatchRequest'
+} as const;
+
+export const ScimUserRequestSchema = {
+    properties: {
+        schemas: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Schemas',
+            default: ['urn:ietf:params:scim:schemas:core:2.0:User']
+        },
+        userName: {
+            type: 'string',
+            format: 'email',
+            title: 'Username'
+        },
+        displayName: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Displayname'
+        },
+        name: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/ScimName'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        active: {
+            type: 'boolean',
+            title: 'Active',
+            default: true
+        }
+    },
+    type: 'object',
+    required: ['userName'],
+    title: 'ScimUserRequest'
 } as const;
 
 export const SessionPublicSchema = {
@@ -1728,6 +2147,17 @@ export const UsersPublicSchema = {
         count: {
             type: 'integer',
             title: 'Count'
+        },
+        next_cursor: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Next Cursor'
         }
     },
     type: 'object',

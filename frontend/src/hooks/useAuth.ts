@@ -3,12 +3,13 @@ import { useNavigate } from "@tanstack/react-router"
 
 import {
   type Body_login_login_access_token as AccessToken,
+  AuthService,
   LoginService,
   type UserPublic,
   type UserRegister,
   UsersService,
 } from "@/client"
-import { clearTokens, storeTokens } from "@/lib/featureApi"
+import { clearTokens, getRefreshToken, storeTokens } from "@/lib/featureApi"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
@@ -57,7 +58,17 @@ const useAuth = () => {
     onError: handleError.bind(showErrorToast),
   })
 
-  const logout = () => {
+  const logout = async () => {
+    const refresh = getRefreshToken()
+    if (refresh) {
+      try {
+        await AuthService.logout({
+          requestBody: { refresh_token: refresh },
+        })
+      } catch {
+        // best-effort: server session is revoked on next refresh attempt anyway
+      }
+    }
     clearTokens()
     navigate({ to: "/login" })
   }

@@ -28,7 +28,11 @@
     "admin": "Administración",
     "notifications": "Notificaciones",
     "markAllRead": "Marcar todo como leído",
-    "allCaughtUp": "Estás al día"
+    "allCaughtUp": "Estás al día",
+    "orgSettings": "Config. de organización",
+    "apiKeys": "Claves de API",
+    "webhooks": "Webhooks",
+    "security": "Seguridad"
   },
   "auth": {
     "loginTitle": "Inicia sesión en tu cuenta",

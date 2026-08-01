@@ -1,9 +1,9 @@
 import { z } from "zod"
 
-const schema = z.object({
+export const envSchema = z.object({
   VITE_API_URL: z.string().default(""),
 })
 
-export const env = schema.parse({
+export const env = envSchema.parse({
   VITE_API_URL: import.meta.env.VITE_API_URL ?? "",
 })

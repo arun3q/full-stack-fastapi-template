@@ -42,6 +42,7 @@ export type AuditLogPublic = {
 export type AuditLogsPublic = {
     data: Array<AuditLogPublic>;
     count: number;
+    next_cursor?: (string | null);
 };
 
 export type Body_files_upload = {
@@ -167,6 +168,21 @@ export type OrganizationPublic = {
 export type OrganizationUpdate = {
     name?: (string | null);
     branding?: (string | null);
+    is_active?: (boolean | null);
+};
+
+export type PlanCreate = {
+    name: string;
+    slug: string;
+    description?: (string | null);
+    amount_cents: number;
+    currency?: string;
+    billing_interval?: string;
+    trial_days?: number;
+    provider_plan_id?: (string | null);
+    is_active?: boolean;
+    features?: (string | null);
+    quotas?: (string | null);
 };
 
 export type PlanPublic = {
@@ -178,6 +194,7 @@ export type PlanPublic = {
     currency: string;
     billing_interval: string;
     is_active: boolean;
+    trial_days?: number;
     features?: (string | null);
     quotas?: (string | null);
 };
@@ -185,6 +202,19 @@ export type PlanPublic = {
 export type PlansPublic = {
     data: Array<PlanPublic>;
     count: number;
+};
+
+export type PlanUpdate = {
+    name?: (string | null);
+    description?: (string | null);
+    amount_cents?: (number | null);
+    currency?: (string | null);
+    billing_interval?: (string | null);
+    trial_days?: (number | null);
+    provider_plan_id?: (string | null);
+    features?: (string | null);
+    quotas?: (string | null);
+    is_active?: (boolean | null);
 };
 
 export type PrivateUserCreate = {
@@ -205,6 +235,34 @@ export type RefreshRequest = {
 
 export type ResendVerificationEmail = {
     email: string;
+};
+
+export type ScimName = {
+    formatted?: (string | null);
+    givenName?: (string | null);
+    familyName?: (string | null);
+};
+
+export type ScimPatchOperation = {
+    op?: string;
+    path?: (string | null);
+    value?: unknown;
+};
+
+export type ScimPatchRequest = {
+    schemas?: Array<(string)>;
+    active?: (boolean | null);
+    displayName?: (string | null);
+    name?: (ScimName | null);
+    Operations?: (Array<ScimPatchOperation> | null);
+};
+
+export type ScimUserRequest = {
+    schemas?: Array<(string)>;
+    userName: string;
+    displayName?: (string | null);
+    name?: (ScimName | null);
+    active?: boolean;
 };
 
 export type SessionPublic = {
@@ -313,6 +371,7 @@ export type UserRegister = {
 export type UsersPublic = {
     data: Array<UserPublic>;
     count: number;
+    next_cursor?: (string | null);
 };
 
 export type UserUpdate = {
@@ -389,6 +448,7 @@ export type AdminAdminOverviewResponse = ({
 });
 
 export type AdminAdminOrganizationsData = {
+    cursor?: (string | null);
     limit?: number;
     skip?: number;
 };
@@ -402,7 +462,9 @@ export type AdminAdminUsersData = {
     skip?: number;
 };
 
-export type AdminAdminUsersResponse = (Array<UserPublic>);
+export type AdminAdminUsersResponse = ({
+    [key: string]: unknown;
+});
 
 export type AdminAdminSetUserStatusData = {
     isActive: boolean;
@@ -412,11 +474,33 @@ export type AdminAdminSetUserStatusData = {
 export type AdminAdminSetUserStatusResponse = (User);
 
 export type AdminAdminAuditLogData = {
+    cursor?: (string | null);
     limit?: number;
     skip?: number;
 };
 
 export type AdminAdminAuditLogResponse = (AuditLogsPublic);
+
+export type AdminAdminPlansResponse = (PlansPublic);
+
+export type AdminAdminCreatePlanData = {
+    requestBody: PlanCreate;
+};
+
+export type AdminAdminCreatePlanResponse = (PlanPublic);
+
+export type AdminAdminUpdatePlanData = {
+    planId: string;
+    requestBody: PlanUpdate;
+};
+
+export type AdminAdminUpdatePlanResponse = (PlanPublic);
+
+export type AdminAdminDeletePlanData = {
+    planId: string;
+};
+
+export type AdminAdminDeletePlanResponse = (Message);
 
 export type AiAiHealthResponse = ({
     [key: string]: unknown;
@@ -512,6 +596,13 @@ export type FilesUploadResponse = ({
     [key: string]: (string);
 });
 
+export type FilesDownloadData = {
+    fileName: string;
+    organizationId: string;
+};
+
+export type FilesDownloadResponse = (unknown);
+
 export type ItemsReadItemsData = {
     cursor?: (string | null);
     limit?: number;
@@ -578,6 +669,10 @@ export type LoginRecoverPasswordHtmlContentData = {
 
 export type LoginRecoverPasswordHtmlContentResponse = (string);
 
+export type MetricsMetricsData = {
+    authorization?: (string | null);
+};
+
 export type MetricsMetricsResponse = (unknown);
 
 export type NotificationsReadNotificationsResponse = (NotificationsPublic);
@@ -619,6 +714,12 @@ export type OrganizationsUpdateOrganizationRouteData = {
 
 export type OrganizationsUpdateOrganizationRouteResponse = (OrganizationPublic);
 
+export type OrganizationsDeleteOrganizationData = {
+    organizationId: string;
+};
+
+export type OrganizationsDeleteOrganizationResponse = (Message);
+
 export type OrganizationsReadMembersData = {
     organizationId: string;
 };
@@ -659,6 +760,53 @@ export type OrganizationsRemoveMemberRouteData = {
 
 export type OrganizationsRemoveMemberRouteResponse = (Message);
 
+export type OrganizationsSuspendOrganizationData = {
+    organizationId: string;
+};
+
+export type OrganizationsSuspendOrganizationResponse = (OrganizationPublic);
+
+export type OrganizationsExportOrganizationData = {
+    organizationId: string;
+};
+
+export type OrganizationsExportOrganizationResponse = ({
+    [key: string]: unknown;
+});
+
+export type OrganizationsRevokeInviteData = {
+    inviteId: string;
+    organizationId: string;
+};
+
+export type OrganizationsRevokeInviteResponse = (Message);
+
+export type OrganizationsResendInviteData = {
+    inviteId: string;
+    organizationId: string;
+};
+
+export type OrganizationsResendInviteResponse = (OrganizationInvitePublic);
+
+export type OrganizationsDeclineInviteData = {
+    token: string;
+};
+
+export type OrganizationsDeclineInviteResponse = (Message);
+
+export type OrganizationsTransferOwnershipData = {
+    organizationId: string;
+    userId: string;
+};
+
+export type OrganizationsTransferOwnershipResponse = (Message);
+
+export type OrganizationsLeaveOrganizationData = {
+    organizationId: string;
+};
+
+export type OrganizationsLeaveOrganizationResponse = (Message);
+
 export type PaymentsReadPlansResponse = (PlansPublic);
 
 export type PaymentsCreateCheckoutData = {
@@ -668,6 +816,12 @@ export type PaymentsCreateCheckoutData = {
 export type PaymentsCreateCheckoutResponse = ({
     [key: string]: (string);
 });
+
+export type PaymentsChangePlanData = {
+    planId: string;
+};
+
+export type PaymentsChangePlanResponse = (SubscriptionPublic);
 
 export type PaymentsPaymentsWebhookResponse = ({
     [key: string]: (boolean);
@@ -681,6 +835,10 @@ export type PaymentsBillingPortalResponse = ({
     [key: string]: (string);
 });
 
+export type PaymentsGetUsageMetricsResponse = ({
+    [key: string]: unknown;
+});
+
 export type PrivateCreateUserData = {
     requestBody: PrivateUserCreate;
 };
@@ -689,7 +847,79 @@ export type PrivateCreateUserResponse = (UserPublic);
 
 export type PublicPublicConfigResponse = (PublicConfig);
 
+export type SamlSamlMetadataResponse = (unknown);
+
+export type SamlSamlLoginResponse = (unknown);
+
+export type SamlSamlAcsResponse = (unknown);
+
+export type SamlSamlStatusResponse = (Message);
+
+export type ScimServiceProviderConfigResponse = ({
+    [key: string]: unknown;
+});
+
+export type ScimListScimUsersData = {
+    authorization?: (string | null);
+    count?: number;
+    startIndex?: number;
+    xApiKey?: (string | null);
+};
+
+export type ScimListScimUsersResponse = ({
+    [key: string]: unknown;
+});
+
+export type ScimCreateScimUserData = {
+    authorization?: (string | null);
+    requestBody: ScimUserRequest;
+    xApiKey?: (string | null);
+};
+
+export type ScimCreateScimUserResponse = ({
+    [key: string]: unknown;
+});
+
+export type ScimGetScimUserData = {
+    authorization?: (string | null);
+    userId: string;
+    xApiKey?: (string | null);
+};
+
+export type ScimGetScimUserResponse = ({
+    [key: string]: unknown;
+});
+
+export type ScimPatchScimUserData = {
+    authorization?: (string | null);
+    requestBody: ScimPatchRequest;
+    userId: string;
+    xApiKey?: (string | null);
+};
+
+export type ScimPatchScimUserResponse = ({
+    [key: string]: unknown;
+});
+
+export type ScimDeleteScimUserData = {
+    authorization?: (string | null);
+    userId: string;
+    xApiKey?: (string | null);
+};
+
+export type ScimDeleteScimUserResponse = (void);
+
+export type ScimListScimGroupsData = {
+    authorization?: (string | null);
+    xApiKey?: (string | null);
+};
+
+export type ScimListScimGroupsResponse = ({
+    [key: string]: unknown;
+});
+
 export type UsersReadUsersData = {
+    cursor?: (string | null);
     limit?: number;
     skip?: number;
 };
@@ -764,6 +994,10 @@ export type UtilsTestEmailData = {
 export type UtilsTestEmailResponse = (Message);
 
 export type UtilsHealthCheckResponse = (boolean);
+
+export type UtilsReadinessResponse = ({
+    [key: string]: (string);
+});
 
 export type WebhooksReadWebhooksResponse = (WebhooksPublic);
 

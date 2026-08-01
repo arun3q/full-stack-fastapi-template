@@ -1,6 +1,7 @@
 import {
   AdminService,
   AiService,
+  ApiKeysService,
   AuthService,
   NotificationsService,
   OpenAPI,
@@ -8,6 +9,7 @@ import {
   PaymentsService,
   PublicService,
   UsersService,
+  WebhooksService,
 } from "@/client"
 
 export type PlanPublic = {
@@ -194,6 +196,15 @@ export const featureApi = {
     },
   billingPortal: async () =>
     (await PaymentsService.billingPortal()) as unknown as { url: string },
+  changePlan: async (planId: string) =>
+    (await PaymentsService.changePlan({
+      planId,
+    })) as unknown as SubscriptionPublic,
+  usage: async () =>
+    (await PaymentsService.getUsageMetrics()) as unknown as Record<
+      string,
+      { used: number; limit: number } | string | null
+    >,
   aiHealth: async () =>
     (await AiService.aiHealth()) as unknown as {
       provider: string | null
@@ -241,6 +252,41 @@ export const featureApi = {
       organizationId: orgId,
       userId,
     })) as unknown as { message: string },
+  revokeInvite: async (orgId: string, inviteId: string) =>
+    (await OrganizationsService.revokeInvite({
+      organizationId: orgId,
+      inviteId,
+    })) as unknown as { message: string },
+  resendInvite: async (orgId: string, inviteId: string) =>
+    (await OrganizationsService.resendInvite({
+      organizationId: orgId,
+      inviteId,
+    })) as unknown as OrganizationInvitePublic,
+  declineInvite: async (token: string) =>
+    (await OrganizationsService.declineInvite({ token })) as unknown as {
+      message: string
+    },
+  suspendOrganization: async (orgId: string) =>
+    (await OrganizationsService.suspendOrganization({
+      organizationId: orgId,
+    })) as unknown as OrganizationPublic,
+  deleteOrganization: async (orgId: string) =>
+    (await OrganizationsService.deleteOrganization({
+      organizationId: orgId,
+    })) as unknown as { message: string },
+  exportOrganization: async (orgId: string) =>
+    (await OrganizationsService.exportOrganization({
+      organizationId: orgId,
+    })) as unknown as Record<string, unknown>,
+  transferOwnership: async (orgId: string, userId: string) =>
+    (await OrganizationsService.transferOwnership({
+      organizationId: orgId,
+      userId,
+    })) as unknown as { message: string },
+  leaveOrganization: async (orgId: string) =>
+    (await OrganizationsService.leaveOrganization({
+      organizationId: orgId,
+    })) as unknown as { message: string },
   verifyEmail: async (token: string) =>
     (await UsersService.verifyEmail({
       requestBody: { token },
@@ -274,6 +320,100 @@ export const featureApi = {
       }[]
       count: number
     },
+  adminAuditLog: async () =>
+    (await AdminService.adminAuditLog()) as unknown as {
+      data: {
+        id: string
+        action: string
+        user_id: string | null
+        organization_id: string | null
+        created_at: string | null
+      }[]
+      count: number
+    },
+  apiKeys: async () =>
+    (await ApiKeysService.readApiKeys()) as unknown as {
+      data: {
+        id: string
+        name: string
+        scopes: string[]
+        last_used_at: string | null
+        created_at: string | null
+      }[]
+      count: number
+    },
+  createApiKey: async (name: string, scopes: string[]) =>
+    (await ApiKeysService.createApiKeyRoute({
+      requestBody: { name, scopes },
+    })) as unknown as { key: string },
+  revokeApiKey: async (keyId: string) =>
+    (await ApiKeysService.revokeApiKeyRoute({
+      keyId,
+    })) as unknown as { message: string },
+  webhooks: async () =>
+    (await WebhooksService.readWebhooks()) as unknown as {
+      data: {
+        id: string
+        url: string
+        events: string[]
+        is_active: boolean
+        created_at: string | null
+      }[]
+      count: number
+    },
+  createWebhook: async (url: string, events: string[]) =>
+    (await WebhooksService.createWebhookRoute({
+      requestBody: { url, events },
+    })) as unknown as {
+      id: string
+      url: string
+      events: string[]
+      is_active: boolean
+    },
+  deleteWebhook: async (webhookId: string) =>
+    (await WebhooksService.deleteWebhook({
+      webhookId,
+    })) as unknown as { message: string },
+  webhookDeliveries: async (webhookId: string) =>
+    (await WebhooksService.readDeliveries({
+      webhookId,
+    })) as unknown as {
+      data: {
+        id: string
+        event: string
+        status: string
+        attempts: number
+        created_at: string | null
+      }[]
+      count: number
+    },
+  sessions: async () =>
+    (await AuthService.readSessions()) as unknown as {
+      data: {
+        id: string
+        ip_address: string | null
+        user_agent: string | null
+        last_used_at: string | null
+        created_at: string | null
+      }[]
+      count: number
+    },
+  revokeSession: async (sessionId: string) =>
+    (await AuthService.revokeSessionRoute({
+      sessionId,
+    })) as unknown as { message: string },
+  totpSetup: async (password: string) =>
+    (await AuthService.totpSetup({
+      requestBody: { password },
+    })) as unknown as { otpauth_url: string; secret: string },
+  totpEnable: async (code: string, password: string) =>
+    (await AuthService.totpEnable({
+      requestBody: { code, password },
+    })) as unknown as { message: string },
+  totpDisable: async (code: string) =>
+    (await AuthService.totpDisable({
+      requestBody: { code },
+    })) as unknown as { message: string },
 }
 
 export type StreamChatOptions = {

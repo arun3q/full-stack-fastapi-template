@@ -22,13 +22,17 @@ import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as MarketingTermsRouteImport } from './routes/_marketing/terms'
 import { Route as MarketingPrivacyRouteImport } from './routes/_marketing/privacy'
 import { Route as MarketingPricingRouteImport } from './routes/_marketing/pricing'
+import { Route as LayoutWebhooksRouteImport } from './routes/_layout/webhooks'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
+import { Route as LayoutSecurityRouteImport } from './routes/_layout/security'
+import { Route as LayoutOrgSettingsRouteImport } from './routes/_layout/org-settings'
 import { Route as LayoutOnboardingRouteImport } from './routes/_layout/onboarding'
 import { Route as LayoutMembersRouteImport } from './routes/_layout/members'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
 import { Route as LayoutChatRouteImport } from './routes/_layout/chat'
 import { Route as LayoutBillingRouteImport } from './routes/_layout/billing'
+import { Route as LayoutApiKeysRouteImport } from './routes/_layout/api-keys'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -94,9 +98,24 @@ const MarketingPricingRoute = MarketingPricingRouteImport.update({
   path: '/pricing',
   getParentRoute: () => MarketingRoute,
 } as any)
+const LayoutWebhooksRoute = LayoutWebhooksRouteImport.update({
+  id: '/webhooks',
+  path: '/webhooks',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSecurityRoute = LayoutSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutOrgSettingsRoute = LayoutOrgSettingsRouteImport.update({
+  id: '/org-settings',
+  path: '/org-settings',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutOnboardingRoute = LayoutOnboardingRouteImport.update({
@@ -129,6 +148,11 @@ const LayoutBillingRoute = LayoutBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutApiKeysRoute = LayoutApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutAdminRoute = LayoutAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -144,13 +168,17 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof LayoutAdminRoute
+  '/api-keys': typeof LayoutApiKeysRoute
   '/billing': typeof LayoutBillingRoute
   '/chat': typeof LayoutChatRoute
   '/dashboard': typeof LayoutDashboardRoute
   '/items': typeof LayoutItemsRoute
   '/members': typeof LayoutMembersRoute
   '/onboarding': typeof LayoutOnboardingRoute
+  '/org-settings': typeof LayoutOrgSettingsRoute
+  '/security': typeof LayoutSecurityRoute
   '/settings': typeof LayoutSettingsRoute
+  '/webhooks': typeof LayoutWebhooksRoute
   '/pricing': typeof MarketingPricingRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/terms': typeof MarketingTermsRoute
@@ -165,13 +193,17 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof LayoutAdminRoute
+  '/api-keys': typeof LayoutApiKeysRoute
   '/billing': typeof LayoutBillingRoute
   '/chat': typeof LayoutChatRoute
   '/dashboard': typeof LayoutDashboardRoute
   '/items': typeof LayoutItemsRoute
   '/members': typeof LayoutMembersRoute
   '/onboarding': typeof LayoutOnboardingRoute
+  '/org-settings': typeof LayoutOrgSettingsRoute
+  '/security': typeof LayoutSecurityRoute
   '/settings': typeof LayoutSettingsRoute
+  '/webhooks': typeof LayoutWebhooksRoute
   '/pricing': typeof MarketingPricingRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/terms': typeof MarketingTermsRoute
@@ -188,13 +220,17 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_layout/admin': typeof LayoutAdminRoute
+  '/_layout/api-keys': typeof LayoutApiKeysRoute
   '/_layout/billing': typeof LayoutBillingRoute
   '/_layout/chat': typeof LayoutChatRoute
   '/_layout/dashboard': typeof LayoutDashboardRoute
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/members': typeof LayoutMembersRoute
   '/_layout/onboarding': typeof LayoutOnboardingRoute
+  '/_layout/org-settings': typeof LayoutOrgSettingsRoute
+  '/_layout/security': typeof LayoutSecurityRoute
   '/_layout/settings': typeof LayoutSettingsRoute
+  '/_layout/webhooks': typeof LayoutWebhooksRoute
   '/_marketing/pricing': typeof MarketingPricingRoute
   '/_marketing/privacy': typeof MarketingPrivacyRoute
   '/_marketing/terms': typeof MarketingTermsRoute
@@ -212,13 +248,17 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-email'
     | '/admin'
+    | '/api-keys'
     | '/billing'
     | '/chat'
     | '/dashboard'
     | '/items'
     | '/members'
     | '/onboarding'
+    | '/org-settings'
+    | '/security'
     | '/settings'
+    | '/webhooks'
     | '/pricing'
     | '/privacy'
     | '/terms'
@@ -233,13 +273,17 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-email'
     | '/admin'
+    | '/api-keys'
     | '/billing'
     | '/chat'
     | '/dashboard'
     | '/items'
     | '/members'
     | '/onboarding'
+    | '/org-settings'
+    | '/security'
     | '/settings'
+    | '/webhooks'
     | '/pricing'
     | '/privacy'
     | '/terms'
@@ -255,13 +299,17 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-email'
     | '/_layout/admin'
+    | '/_layout/api-keys'
     | '/_layout/billing'
     | '/_layout/chat'
     | '/_layout/dashboard'
     | '/_layout/items'
     | '/_layout/members'
     | '/_layout/onboarding'
+    | '/_layout/org-settings'
+    | '/_layout/security'
     | '/_layout/settings'
+    | '/_layout/webhooks'
     | '/_marketing/pricing'
     | '/_marketing/privacy'
     | '/_marketing/terms'
@@ -374,11 +422,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketingPricingRouteImport
       parentRoute: typeof MarketingRoute
     }
+    '/_layout/webhooks': {
+      id: '/_layout/webhooks'
+      path: '/webhooks'
+      fullPath: '/webhooks'
+      preLoaderRoute: typeof LayoutWebhooksRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/settings': {
       id: '/_layout/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof LayoutSettingsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/security': {
+      id: '/_layout/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof LayoutSecurityRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/org-settings': {
+      id: '/_layout/org-settings'
+      path: '/org-settings'
+      fullPath: '/org-settings'
+      preLoaderRoute: typeof LayoutOrgSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/onboarding': {
@@ -423,6 +492,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutBillingRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/api-keys': {
+      id: '/_layout/api-keys'
+      path: '/api-keys'
+      fullPath: '/api-keys'
+      preLoaderRoute: typeof LayoutApiKeysRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/admin': {
       id: '/_layout/admin'
       path: '/admin'
@@ -435,24 +511,32 @@ declare module '@tanstack/react-router' {
 
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
+  LayoutApiKeysRoute: typeof LayoutApiKeysRoute
   LayoutBillingRoute: typeof LayoutBillingRoute
   LayoutChatRoute: typeof LayoutChatRoute
   LayoutDashboardRoute: typeof LayoutDashboardRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutMembersRoute: typeof LayoutMembersRoute
   LayoutOnboardingRoute: typeof LayoutOnboardingRoute
+  LayoutOrgSettingsRoute: typeof LayoutOrgSettingsRoute
+  LayoutSecurityRoute: typeof LayoutSecurityRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
+  LayoutWebhooksRoute: typeof LayoutWebhooksRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRoute,
+  LayoutApiKeysRoute: LayoutApiKeysRoute,
   LayoutBillingRoute: LayoutBillingRoute,
   LayoutChatRoute: LayoutChatRoute,
   LayoutDashboardRoute: LayoutDashboardRoute,
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutMembersRoute: LayoutMembersRoute,
   LayoutOnboardingRoute: LayoutOnboardingRoute,
+  LayoutOrgSettingsRoute: LayoutOrgSettingsRoute,
+  LayoutSecurityRoute: LayoutSecurityRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
+  LayoutWebhooksRoute: LayoutWebhooksRoute,
 }
 
 const LayoutRouteWithChildren =

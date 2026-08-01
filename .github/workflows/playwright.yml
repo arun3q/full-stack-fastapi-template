@@ -76,6 +76,13 @@ jobs:
     - run: bun ci
       working-directory: frontend
     - run: bash scripts/generate-client.sh
+    - name: Check generated client is committed (no drift)
+      working-directory: frontend
+      run: |
+        git diff --exit-code src/client openapi.json || {
+          echo "Generated OpenAPI client drifted from the backend. Run scripts/generate-client.sh and commit the result."
+          exit 1
+        }
     - run: docker compose build
     - run: docker compose down -v --remove-orphans
     - name: Run Playwright tests

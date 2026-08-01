@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { Check, CreditCard } from "lucide-react"
+import { Check, CreditCard, Gauge } from "lucide-react"
 import { useEffect } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +33,20 @@ function formatPrice(amountCents: number, currency: string): string {
     style: "currency",
     currency: currency.toUpperCase(),
   }).format(amountCents / 100)
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`
+}
+
+const USAGE_LABELS: Record<string, string> = {
+  ai_calls: "AI calls",
+  storage_bytes: "Storage",
+  max_items: "Items",
+  max_seats: "Seats",
 }
 
 function parseFeatures(raw: string | null): string[] {
@@ -86,6 +100,12 @@ function Billing() {
     queryFn: featureApi.subscription,
   })
 
+  const usageQuery = useQuery({
+    queryKey: ["usage"],
+    queryFn: featureApi.usage,
+    enabled: !!subscriptionQuery.data,
+  })
+
   useEffect(() => {
     if (success) {
       showSuccessToast("Your subscription is being activated")
@@ -118,6 +138,16 @@ function Billing() {
     onSuccess: (data) => {
       window.location.href = data.url
     },
+  })
+
+  const changePlanMutation = useMutation({
+    mutationFn: (planId: string) => featureApi.changePlan(planId),
+    onSuccess: () => {
+      showSuccessToast("Plan updated")
+      queryClient.invalidateQueries({ queryKey: ["subscription"] })
+      queryClient.invalidateQueries({ queryKey: ["usage"] })
+    },
+    onError: (error: Error) => showErrorToast(error.message),
   })
 
   const subscription = subscriptionQuery.data
@@ -203,6 +233,66 @@ function Billing() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Gauge className="size-5" />
+            Usage
+          </CardTitle>
+          <CardDescription>
+            Metered usage this month against your plan's limits
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {usageQuery.isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </div>
+          ) : usageQuery.data ? (
+            <div className="space-y-3">
+              {Object.entries(usageQuery.data)
+                .filter(([key]) => key !== "plan")
+                .map(([meter, value]) => {
+                  if (typeof value !== "object" || value === null) return null
+                  const { used, limit } = value as {
+                    used: number
+                    limit: number
+                  }
+                  const pct =
+                    limit > 0 ? Math.min((used / limit) * 100, 100) : 0
+                  return (
+                    <div key={meter} className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          {USAGE_LABELS[meter] ?? meter}
+                        </span>
+                        <span>
+                          {meter === "storage_bytes"
+                            ? `${formatBytes(used)} / ${formatBytes(limit)}`
+                            : `${used} / ${limit === 0 ? "∞" : limit}`}
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full rounded-full ${
+                            pct >= 90 ? "bg-destructive" : "bg-primary"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          ) : (
+            <p className="text-muted-foreground">
+              Subscribe to a plan to see usage.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {plansQuery.isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
@@ -243,10 +333,29 @@ function Billing() {
                       className="w-full"
                       variant={isCurrent ? "outline" : "default"}
                       disabled={isCurrent}
-                      loading={checkoutMutation.isPending}
-                      onClick={() => checkoutMutation.mutate(plan.id)}
+                      loading={
+                        checkoutMutation.isPending ||
+                        changePlanMutation.isPending
+                      }
+                      onClick={() => {
+                        if (subscription) {
+                          if (
+                            window.confirm(
+                              `Switch to the ${plan.name} plan? Changes are prorated.`,
+                            )
+                          ) {
+                            changePlanMutation.mutate(plan.id)
+                          }
+                        } else {
+                          checkoutMutation.mutate(plan.id)
+                        }
+                      }}
                     >
-                      {isCurrent ? "Current plan" : "Choose plan"}
+                      {isCurrent
+                        ? "Current plan"
+                        : subscription
+                          ? "Change plan"
+                          : "Choose plan"}
                     </LoadingButton>
                   </CardFooter>
                 </Card>

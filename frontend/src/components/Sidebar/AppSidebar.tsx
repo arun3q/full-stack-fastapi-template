@@ -1,4 +1,15 @@
-import { Bot, Briefcase, CreditCard, Home, Rocket, Users } from "lucide-react"
+import {
+  Bot,
+  Briefcase,
+  Building2,
+  CreditCard,
+  Home,
+  KeyRound,
+  Rocket,
+  ShieldCheck,
+  Users,
+  Webhook,
+} from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -35,6 +46,30 @@ const baseItems: Item[] = [
     path: "/billing",
   },
   { icon: Bot, titleKey: "app.aiChat", title: "AI Chat", path: "/chat" },
+  {
+    icon: Building2,
+    titleKey: "app.orgSettings",
+    title: "Org settings",
+    path: "/org-settings",
+  },
+  {
+    icon: KeyRound,
+    titleKey: "app.apiKeys",
+    title: "API keys",
+    path: "/api-keys",
+  },
+  {
+    icon: Webhook,
+    titleKey: "app.webhooks",
+    title: "Webhooks",
+    path: "/webhooks",
+  },
+  {
+    icon: ShieldCheck,
+    titleKey: "app.security",
+    title: "Security",
+    path: "/security",
+  },
 ]
 
 export function AppSidebar() {

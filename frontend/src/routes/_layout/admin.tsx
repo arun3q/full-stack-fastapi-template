@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -164,6 +165,7 @@ function Admin() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="organizations">Organizations</TabsTrigger>
+          <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
           <OverviewTab />
@@ -185,7 +187,70 @@ function Admin() {
         <TabsContent value="organizations">
           <OrganizationsTab />
         </TabsContent>
+        <TabsContent value="audit">
+          <AuditLogTab />
+        </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function AuditLogTab() {
+  const query = useQuery({
+    queryKey: ["admin-audit-log"],
+    queryFn: featureApi.adminAuditLog,
+  })
+  const entries = query.data?.data ?? []
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="text-lg font-semibold">Audit log</h2>
+        <p className="text-muted-foreground">
+          Recent platform-wide audit events
+        </p>
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          {query.isLoading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : entries.length === 0 ? (
+            <p className="text-muted-foreground">No audit events yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Action</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>Organization</TableHead>
+                  <TableHead className="text-right">When</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {entries.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>
+                      <code className="text-xs">{entry.action}</code>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {entry.user_id ? entry.user_id.slice(0, 8) : "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {entry.organization_id
+                        ? entry.organization_id.slice(0, 8)
+                        : "-"}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {entry.created_at
+                        ? new Date(entry.created_at).toLocaleString()
+                        : "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
