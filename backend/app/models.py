@@ -306,6 +306,7 @@ class PlanCreate(SQLModel):
     amount_cents: int
     currency: str = Field(default="usd", max_length=10)
     billing_interval: str = Field(default="month", max_length=20)
+    trial_days: int = 0
     provider_plan_id: str | None = Field(default=None, max_length=255)
     is_active: bool = True
     features: str | None = Field(default=None, max_length=2000)
@@ -321,8 +322,22 @@ class PlanPublic(SQLModel):
     currency: str
     billing_interval: str
     is_active: bool
+    trial_days: int = 0
     features: str | None = None
     quotas: str | None = None
+
+
+class PlanUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    amount_cents: int | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, max_length=10)
+    billing_interval: str | None = Field(default=None, max_length=20)
+    trial_days: int | None = None
+    provider_plan_id: str | None = Field(default=None, max_length=255)
+    features: str | None = Field(default=None, max_length=2000)
+    quotas: str | None = Field(default=None, max_length=2000)
+    is_active: bool | None = None
 
 
 class PlansPublic(SQLModel):
@@ -380,6 +395,9 @@ class PaymentEvent(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     organization_id: uuid.UUID | None = Field(
         default=None, foreign_key="organization.id", ondelete="SET NULL"
+    )
+    subscription_id: uuid.UUID | None = Field(
+        default=None, foreign_key="subscription.id", ondelete="SET NULL"
     )
     user_id: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"

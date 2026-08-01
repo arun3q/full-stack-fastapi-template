@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.jobs import send_email_background
 from app.core.notifications import notify
 from app.core.orgs import ORG_ROLE_MEMBER, ORG_ROLE_OWNER, has_permission
+from app.core.payments import sync_subscription_quantity
 from app.crud.api_keys import list_api_keys, revoke_api_key
 from app.crud.organizations import (
     add_member,
@@ -316,6 +317,22 @@ async def accept_invite(
             status_code=409, detail="Already a member of this organization"
         )
 
+    # Re-check seat quota at accept time (guards against TOCTOU overshoot)
+    if billing_enabled():
+        plan = await get_active_plan(session, invite.organization_id)
+        max_seats = (
+            plan_quota(plan, "max_seats", default=0)
+            if plan is not None
+            else FREE_PLAN_MAX_SEATS
+        )
+        if max_seats > 0:
+            member_count = await count_members(session, invite.organization_id)
+            if member_count >= max_seats:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Your plan's seat limit is full; ask the owner to upgrade",
+                )
+
     await add_member(
         session,
         organization_id=invite.organization_id,
@@ -342,6 +359,7 @@ async def accept_invite(
         entity_id=str(invite.id),
     )
     await session.commit()
+    await sync_subscription_quantity(session, invite.organization_id)
     return Message(message="Invitation accepted")
 
 
@@ -424,6 +442,7 @@ async def remove_member_route(
     if member.role == ORG_ROLE_OWNER:
         raise HTTPException(status_code=403, detail="Cannot remove the owner")
     await session.commit()
+    await sync_subscription_quantity(session, organization_id)
     return Message(message="Member removed")
 
 

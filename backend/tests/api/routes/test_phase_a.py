@@ -33,9 +33,13 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _org_with_admin(client: TestClient, db: AsyncSession) -> tuple[dict, str, str]:
+async def _org_with_admin(
+    client: TestClient, db: AsyncSession
+) -> tuple[dict, str, str]:
     owner_email, owner_password = await _create_user(db)
-    owner_headers = _headers(_login(client, owner_email, owner_password)["access_token"])
+    owner_headers = _headers(
+        _login(client, owner_email, owner_password)["access_token"]
+    )
     org = client.post(
         f"{settings.API_V1_STR}/organizations/",
         headers=owner_headers,
@@ -56,7 +60,9 @@ async def _org_with_admin(client: TestClient, db: AsyncSession) -> tuple[dict, s
         )
     ).first()
     assert token is not None
-    admin_headers = _headers(_login(client, admin_email, admin_password)["access_token"])
+    admin_headers = _headers(
+        _login(client, admin_email, admin_password)["access_token"]
+    )
     assert (
         client.post(
             f"{settings.API_V1_STR}/organizations/invites/{token.token}/accept",
@@ -83,7 +89,9 @@ async def test_admin_cannot_demote_last_owner(
     ).first()
     assert owner_membership is not None
 
-    admin_headers = _headers(_login(client, admin_email, admin_password)["access_token"])
+    admin_headers = _headers(
+        _login(client, admin_email, admin_password)["access_token"]
+    )
     r = client.patch(
         f"{settings.API_V1_STR}/organizations/{org['id']}/members/{owner_membership.user_id}?role=member",
         headers=admin_headers,
@@ -93,7 +101,9 @@ async def test_admin_cannot_demote_last_owner(
 
 async def test_invite_rejects_owner_role(client: TestClient, db: AsyncSession) -> None:
     owner_email, owner_password = await _create_user(db)
-    owner_headers = _headers(_login(client, owner_email, owner_password)["access_token"])
+    owner_headers = _headers(
+        _login(client, owner_email, owner_password)["access_token"]
+    )
     org = client.post(
         f"{settings.API_V1_STR}/organizations/",
         headers=owner_headers,
@@ -126,7 +136,9 @@ async def test_suspended_org_blocks_org_operations(
     client: TestClient, db: AsyncSession
 ) -> None:
     owner_email, owner_password = await _create_user(db)
-    owner_headers = _headers(_login(client, owner_email, owner_password)["access_token"])
+    owner_headers = _headers(
+        _login(client, owner_email, owner_password)["access_token"]
+    )
     org = client.post(
         f"{settings.API_V1_STR}/organizations/",
         headers=owner_headers,
@@ -201,7 +213,9 @@ async def test_delete_account_blocked_when_owner_of_org_with_members(
     client: TestClient, db: AsyncSession
 ) -> None:
     fresh_email, fresh_password = await _create_user(db)
-    fresh_headers = _headers(_login(client, fresh_email, fresh_password)["access_token"])
+    fresh_headers = _headers(
+        _login(client, fresh_email, fresh_password)["access_token"]
+    )
     fresh_org = client.post(
         f"{settings.API_V1_STR}/organizations/",
         headers=fresh_headers,
@@ -221,7 +235,9 @@ async def test_delete_account_blocked_when_owner_of_org_with_members(
         )
     ).first()
     assert token is not None
-    member_headers = _headers(_login(client, member_email, member_password)["access_token"])
+    member_headers = _headers(
+        _login(client, member_email, member_password)["access_token"]
+    )
     assert (
         client.post(
             f"{settings.API_V1_STR}/organizations/invites/{token.token}/accept",

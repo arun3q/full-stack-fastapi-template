@@ -176,6 +176,21 @@ async def create_scim_user(
 ) -> dict[str, Any]:
     """Provision a user into the token's organization."""
     _, org = ctx
+    # Respect the plan's seat quota before provisioning
+    from app.core.access import billing_enabled, get_active_plan, plan_quota
+
+    if billing_enabled():
+        plan = await get_active_plan(session, org.id)
+        max_seats = plan_quota(plan, "max_seats", default=0) if plan is not None else 1
+        if max_seats > 0:
+            from app.crud.organizations import count_members
+
+            member_count = await count_members(session, org.id)
+            if member_count >= max_seats:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Your plan's seat limit is full; upgrade to provision more users",
+                )
     existing = (
         await session.exec(select(User).where(User.email == str(body.userName)))
     ).first()

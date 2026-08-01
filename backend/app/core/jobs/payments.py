@@ -108,6 +108,7 @@ async def process_payment_event_job(
                     and subscription.organization_id is not None
                 ):
                     event.organization_id = subscription.organization_id
+                    event.subscription_id = subscription.id
                     await invalidate_active_plan(subscription.organization_id)
                     if event_type in _LIFECYCLE_EVENTS:
                         await dispatch_webhooks(

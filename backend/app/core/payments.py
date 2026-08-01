@@ -9,13 +9,14 @@ run in a worker thread so they never block the event loop.
 """
 
 import asyncio
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
@@ -134,6 +135,7 @@ class CheckoutProvider(ABC):
         user: User,
         success_url: str,
         cancel_url: str,
+        quantity: int = 1,
     ) -> dict[str, Any]:
         """Create a hosted checkout session. Returns ``{"id", "url"}``."""
 
@@ -146,6 +148,12 @@ class CheckoutProvider(ABC):
         self, *, provider_subscription_id: str, new_price_id: str
     ) -> None:
         """Change the plan of an active subscription (with proration where possible)."""
+
+    @abstractmethod
+    async def update_subscription_quantity(
+        self, *, provider_subscription_id: str, quantity: int
+    ) -> None:
+        """Sync the seat quantity with the provider (per-seat billing)."""
 
     @abstractmethod
     async def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:
@@ -185,6 +193,7 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
         user: User,
         success_url: str,
         cancel_url: str,
+        quantity: int = 1,
     ) -> dict[str, Any]:
         price_id = plan.provider_plan_id or settings.STRIPE_PRICE_ID
         if not price_id:
@@ -193,7 +202,7 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
             )
         params: dict[str, Any] = {
             "mode": "subscription",
-            "line_items": [{"price": price_id, "quantity": 1}],
+            "line_items": [{"price": price_id, "quantity": quantity}],
             "success_url": success_url,
             "cancel_url": cancel_url,
             "client_reference_id": str(organization.id),
@@ -234,6 +243,16 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
             )
 
         await asyncio.to_thread(_modify)
+
+    async def update_subscription_quantity(
+        self, *, provider_subscription_id: str, quantity: int
+    ) -> None:
+        def _update() -> None:
+            self._stripe.Subscription.modify(
+                id=provider_subscription_id, params={"quantity": quantity}
+            )
+
+        await asyncio.to_thread(_update)
 
     async def create_billing_portal_session(
         self, *, customer_id: str, return_url: str
@@ -309,7 +328,11 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
             )
             return "processed"
 
-        if event_type in {"invoice.payment_failed", "invoice.payment_action_required"}:
+        if event_type in {
+            "invoice.payment_failed",
+            "invoice.payment_action_required",
+            "payment_intent.payment_failed",
+        }:
             subscription = await _find_subscription_by_provider_id(
                 session, obj.get("subscription")
             )
@@ -318,7 +341,7 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
                 session.add(subscription)
             return "processed"
 
-        if event_type == "invoice.paid":
+        if event_type in {"invoice.paid", "invoice.payment_succeeded"}:
             subscription = await _find_subscription_by_provider_id(
                 session, obj.get("subscription")
             )
@@ -327,6 +350,33 @@ class StripeProvider(CheckoutProvider, BillingPortalProvider):
                 subscription.current_period_end = _dt_from_unix(obj.get("period_end"))
                 session.add(subscription)
             return "processed"
+
+        if event_type == "payment_intent.succeeded":
+            return "processed"
+
+        if event_type == "charge.refunded":
+            return "refunded"
+
+        if event_type == "customer.subscription.paused":
+            subscription = await _find_subscription_by_provider_id(
+                session, obj.get("id")
+            )
+            if subscription:
+                subscription.status = "paused"
+                session.add(subscription)
+            return "processed"
+
+        if event_type == "customer.subscription.resumed":
+            subscription = await _find_subscription_by_provider_id(
+                session, obj.get("id")
+            )
+            if subscription:
+                subscription.status = "active"
+                session.add(subscription)
+            return "processed"
+
+        if event_type == "checkout.session.expired":
+            return "skipped"
 
         logger.info("Unhandled Stripe event: %s", event_type)
         return "skipped"
@@ -352,6 +402,7 @@ class RazorpayProvider(CheckoutProvider):
         user: User,
         success_url: str,
         cancel_url: str,
+        quantity: int = 1,
     ) -> dict[str, Any]:
         plan_id = plan.provider_plan_id or settings.RAZORPAY_PLAN_ID
         if not plan_id:
@@ -392,12 +443,32 @@ class RazorpayProvider(CheckoutProvider):
             "Plan changes are not supported by Razorpay; cancel and re-subscribe"
         )
 
+    async def update_subscription_quantity(
+        self, *, provider_subscription_id: str, quantity: int
+    ) -> None:
+        raise PaymentError(
+            "Seat quantity changes are not supported by Razorpay; cancel and re-subscribe"
+        )
+
     async def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:
         """Razorpay signs webhooks with HMAC-SHA256 of the raw body."""
         if not settings.RAZORPAY_WEBHOOK_SECRET:
             return False
         import hashlib
         import hmac
+        from datetime import UTC, datetime, timedelta
+
+        # Replay protection: reject events older than 5 minutes
+        try:
+            body = json.loads(payload.decode("utf-8"))
+            created_at = body.get("created_at")
+            if created_at:
+                event_time = datetime.fromtimestamp(int(created_at), tz=UTC)
+                if datetime.now(UTC) - event_time > timedelta(minutes=5):
+                    logger.warning("Rejected stale Razorpay webhook event")
+                    return False
+        except Exception:
+            logger.warning("Failed to parse Razorpay webhook timestamp", exc_info=True)
 
         expected = hmac.new(
             settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"),
@@ -451,3 +522,48 @@ def get_payment_provider() -> CheckoutProvider | None:
     if settings.PAYMENT_PROVIDER == "razorpay":
         return RazorpayProvider()
     return None
+
+
+async def sync_subscription_quantity(
+    session: AsyncSession, organization_id: Any
+) -> None:
+    """Sync per-seat quantity with the provider on member join/leave (best-effort)."""
+    from app.crud.organizations import count_members
+    from app.models import Subscription
+
+    subscription = (
+        await session.exec(
+            select(Subscription).where(
+                Subscription.organization_id == organization_id,
+                col(Subscription.provider_subscription_id).is_not(None),
+                col(Subscription.status).in_(["active", "trialing", "past_due"]),
+            )
+        )
+    ).first()
+    if subscription is None:
+        return
+    member_count = await count_members(session, organization_id)
+    if member_count == subscription.quantity:
+        return
+    if not subscription.provider_subscription_id:
+        subscription.quantity = max(member_count, 1)
+        session.add(subscription)
+        await session.commit()
+        return
+    provider = get_payment_provider()
+    if provider is None:
+        subscription.quantity = max(member_count, 1)
+        session.add(subscription)
+        await session.commit()
+        return
+    try:
+        await provider.update_subscription_quantity(
+            provider_subscription_id=subscription.provider_subscription_id,
+            quantity=max(member_count, 1),
+        )
+    except PaymentError as exc:
+        logger.warning("Failed to sync seat quantity: %s", exc)
+        return
+    subscription.quantity = max(member_count, 1)
+    session.add(subscription)
+    await session.commit()

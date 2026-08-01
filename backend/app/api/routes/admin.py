@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, select
@@ -11,9 +12,14 @@ from app.models import (
     AuditLogPublic,
     AuditLogsPublic,
     Item,
+    Message,
     Organization,
     OrganizationMember,
     Plan,
+    PlanCreate,
+    PlanPublic,
+    PlansPublic,
+    PlanUpdate,
     Subscription,
     User,
     UserPublic,
@@ -46,22 +52,26 @@ async def admin_overview(session: ReadSessionDep) -> dict[str, int]:
     ).one()
     counts["active_subscriptions"] = active_subs
 
-    # Monthly recurring revenue (annualized to monthly)
+    # Monthly recurring revenue (annualized to monthly; includes trialing)
     mrr_cents = 0
     active_subscriptions = (
         await session.exec(
-            select(Subscription).where(col(Subscription.status) == "active")
+            select(Subscription).where(
+                col(Subscription.status).in_(["active", "trialing"])
+            )
         )
     ).all()
     for subscription in active_subscriptions:
         plan = await session.get(Plan, subscription.plan_id)
         if plan is None:
             continue
+        quantity = max(subscription.quantity, 1)
         if plan.billing_interval == "year":
-            mrr_cents += plan.amount_cents // 12
+            mrr_cents += (plan.amount_cents * quantity) // 12
         else:
-            mrr_cents += plan.amount_cents
+            mrr_cents += plan.amount_cents * quantity
     counts["mrr_cents"] = mrr_cents
+    counts["arr_cents"] = mrr_cents * 12
     return counts
 
 
@@ -188,3 +198,76 @@ async def admin_audit_log(
         "count": len(entries),
         "next_cursor": next_cursor,
     }
+
+
+# ---------- Plan management (platform admin) ----------
+
+
+@router.get("/plans", dependencies=admin_only, response_model=PlansPublic)
+async def admin_plans(session: ReadSessionDep) -> Any:
+    """List all plans (active and inactive)."""
+    plans = (await session.exec(select(Plan))).all()
+    return PlansPublic(
+        data=[PlanPublic.model_validate(plan) for plan in plans],
+        count=len(plans),
+    )
+
+
+@router.post(
+    "/plans", dependencies=admin_only, response_model=PlanPublic, status_code=201
+)
+async def admin_create_plan(session: SessionDep, body: PlanCreate) -> Any:
+    """Create a plan."""
+    from app.core.cache import cache_delete
+
+    existing = (await session.exec(select(Plan).where(Plan.slug == body.slug))).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="A plan with this slug exists")
+    plan = Plan(**body.model_dump())
+    session.add(plan)
+    await session.commit()
+    await cache_delete("plans")
+    await session.refresh(plan)
+    return plan
+
+
+@router.patch("/plans/{plan_id}", dependencies=admin_only, response_model=PlanPublic)
+async def admin_update_plan(
+    session: SessionDep, plan_id: UUID, body: PlanUpdate
+) -> Any:
+    """Update a plan."""
+    from app.core.cache import cache_delete
+
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    data = body.model_dump(exclude_unset=True)
+    plan.sqlmodel_update(data)
+    session.add(plan)
+    await session.commit()
+    await cache_delete("plans")
+    await session.refresh(plan)
+    return plan
+
+
+@router.delete("/plans/{plan_id}", dependencies=admin_only, response_model=Message)
+async def admin_delete_plan(session: SessionDep, plan_id: UUID) -> Message:
+    """Deactivate a plan (or hard-delete when no subscriptions reference it)."""
+    from app.core.cache import cache_delete
+
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    referencing = (
+        await session.exec(select(Subscription).where(Subscription.plan_id == plan.id))
+    ).all()
+    if referencing:
+        plan.is_active = False
+        session.add(plan)
+        detail = "Plan deactivated (subscriptions still reference it)"
+    else:
+        await session.delete(plan)
+        detail = "Plan deleted"
+    await session.commit()
+    await cache_delete("plans")
+    return Message(message=detail)

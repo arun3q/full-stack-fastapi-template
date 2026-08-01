@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlmodel import col, select
+from sqlmodel import col, func, select
 
 from app.api.deps import (
     CurrentOrg,
@@ -20,7 +20,9 @@ from app.core.payments import (
     PaymentError,
     get_payment_provider,
 )
+from app.crud.organizations import count_members
 from app.models import (
+    Item,
     Message,
     Plan,
     PlanPublic,
@@ -82,16 +84,70 @@ async def create_checkout(
         )
 
     try:
+        member_count = await count_members(session, current_org.id)
         session_data = await provider.create_checkout_session(
             plan=plan,
             organization=current_org,
             user=current_user,
             success_url=f"{settings.FRONTEND_HOST}/billing?success=true",
             cancel_url=f"{settings.FRONTEND_HOST}/billing?canceled=true",
+            quantity=max(member_count, 1),
         )
     except PaymentError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"id": session_data["id"], "url": session_data["url"]}
+
+
+async def _validate_downgrade(
+    session: SessionDep, current_org: CurrentOrg, new_plan: Plan
+) -> None:
+    """Reject a downgrade when current usage exceeds the target plan's quotas."""
+    from app.core.usage import usage_this_month
+
+    quotas: dict[str, Any] = {}
+    if new_plan.quotas:
+        try:
+            quotas = json.loads(new_plan.quotas)
+        except Exception:
+            quotas = {}
+
+    def over(limit: int) -> bool:
+        return limit > 0
+
+    item_limit = int(quotas.get("max_items", 0))
+    if over(item_limit):
+        item_count = (
+            await session.exec(
+                select(func.count())
+                .select_from(Item)
+                .where(Item.organization_id == current_org.id)
+            )
+        ).one()
+        if item_count > item_limit:
+            raise HTTPException(
+                status_code=400,
+                detail="Downgrade would exceed the new plan's item limit",
+            )
+
+    seat_limit = int(quotas.get("max_seats", 0))
+    if over(seat_limit):
+        member_count = await count_members(session, current_org.id)
+        if member_count > seat_limit:
+            raise HTTPException(
+                status_code=400,
+                detail="Downgrade would exceed the new plan's seat limit",
+            )
+
+    ai_limit = int(quotas.get("ai_calls", 0))
+    if over(ai_limit):
+        ai_usage = await usage_this_month(
+            session, organization_id=current_org.id, meter="ai_calls"
+        )
+        if ai_usage > ai_limit:
+            raise HTTPException(
+                status_code=400,
+                detail="Downgrade would exceed the new plan's AI usage limit",
+            )
 
 
 @router.post(
@@ -121,15 +177,15 @@ async def change_plan(
     if not subscription or not subscription.provider_subscription_id:
         raise HTTPException(status_code=404, detail="No active subscription found")
 
-    price_id = new_plan.provider_plan_id or (
-        settings.STRIPE_PRICE_ID
-        if settings.PAYMENT_PROVIDER == "stripe"
-        else settings.RAZORPAY_PLAN_ID
-    )
-    if not price_id:
+    if not new_plan.provider_plan_id:
         raise HTTPException(
             status_code=400, detail="Plan is not linked to a provider price"
         )
+    price_id = new_plan.provider_plan_id
+
+    # Downgrade validation: reject when current usage exceeds the new plan's quotas
+    await _validate_downgrade(session, current_org, new_plan)
+
     try:
         await provider.change_subscription_plan(
             provider_subscription_id=subscription.provider_subscription_id,
