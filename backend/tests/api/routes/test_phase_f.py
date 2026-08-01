@@ -6,7 +6,14 @@ from sqlmodel import select
 
 from app import crud
 from app.core.config import settings
-from app.models import OrganizationMember, Plan, Subscription, User, UserCreate
+from app.models import (
+    Organization,
+    OrganizationMember,
+    Plan,
+    Subscription,
+    User,
+    UserCreate,
+)
 from tests.utils.utils import random_email, random_lower_string
 
 
@@ -80,3 +87,97 @@ async def test_razorpay_statuses_allowed_by_check(
         )
         await db.flush()  # must not raise IntegrityError
     await db.rollback()
+
+
+async def test_unsuspend_organization(client: TestClient, db: AsyncSession) -> None:
+    email, password = await _create_user(db)
+    headers = _headers(_login(client, email, password)["access_token"])
+    org = client.post(
+        f"{settings.API_V1_STR}/organizations/",
+        headers=headers,
+        json={"name": "Acme"},
+    ).json()
+
+    assert (
+        client.post(
+            f"{settings.API_V1_STR}/organizations/{org['id']}/suspend",
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    # Org access is blocked while suspended
+    r = client.get(f"{settings.API_V1_STR}/items/", headers=headers)
+    assert r.status_code == 403
+
+    # The owner can re-enable even though the org is suspended
+    r = client.post(
+        f"{settings.API_V1_STR}/organizations/{org['id']}/unsuspend",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["is_active"] is True
+
+    org_row = await db.get(Organization, org["id"])
+    assert org_row is not None
+    assert org_row.is_active is True
+
+
+async def test_count_members_excludes_deactivated(
+    client: TestClient, db: AsyncSession
+) -> None:
+    from app.crud.organizations import count_members
+
+    email, password = await _create_user(db)
+    headers = _headers(_login(client, email, password)["access_token"])
+    org = client.post(
+        f"{settings.API_V1_STR}/organizations/",
+        headers=headers,
+        json={"name": "Acme"},
+    ).json()
+
+    member_email, member_password = await _create_user(db)
+    invite = client.post(
+        f"{settings.API_V1_STR}/organizations/{org['id']}/members",
+        headers=headers,
+        json={"email": member_email, "role": "member"},
+    ).json()
+    from app.models import OrganizationInvite
+
+    token = (
+        await db.exec(
+            select(OrganizationInvite).where(OrganizationInvite.id == invite["id"])
+        )
+    ).first()
+    assert token is not None
+    member_headers = _headers(
+        _login(client, member_email, member_password)["access_token"]
+    )
+    assert (
+        client.post(
+            f"{settings.API_V1_STR}/organizations/invites/{token.token}/accept",
+            headers=member_headers,
+        ).status_code
+        == 200
+    )
+    assert await count_members(db, org["id"]) == 2
+
+    # Deactivate the member's membership (as SCIM would)
+    member_user = (
+        await db.exec(select(User).where(User.email == member_email))
+    ).first()
+    assert member_user is not None
+    membership = (
+        await db.exec(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id == org["id"],
+                OrganizationMember.user_id == member_user.id,
+            )
+        )
+    ).first()
+    assert membership is not None
+    membership.active = False
+    db.add(membership)
+    await db.commit()
+
+    # Deactivated members don't consume seats
+    assert await count_members(db, org["id"]) == 1

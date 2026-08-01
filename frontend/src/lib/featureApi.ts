@@ -51,6 +51,7 @@ export type OrganizationPublic = {
   id: string
   name: string
   slug: string
+  is_active: boolean
   branding: string | null
   created_at: string | null
 }
@@ -268,6 +269,10 @@ export const featureApi = {
     },
   suspendOrganization: async (orgId: string) =>
     (await OrganizationsService.suspendOrganization({
+      organizationId: orgId,
+    })) as unknown as OrganizationPublic,
+  unsuspendOrganization: async (orgId: string) =>
+    (await OrganizationsService.unsuspendOrganization({
       organizationId: orgId,
     })) as unknown as OrganizationPublic,
   deleteOrganization: async (orgId: string) =>

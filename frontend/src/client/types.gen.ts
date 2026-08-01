@@ -161,6 +161,7 @@ export type OrganizationPublic = {
     id: string;
     name: string;
     slug: string;
+    is_active?: boolean;
     branding?: (string | null);
     created_at?: (string | null);
 };
@@ -168,7 +169,6 @@ export type OrganizationPublic = {
 export type OrganizationUpdate = {
     name?: (string | null);
     branding?: (string | null);
-    is_active?: (boolean | null);
 };
 
 export type PlanCreate = {
@@ -765,6 +765,12 @@ export type OrganizationsSuspendOrganizationData = {
 };
 
 export type OrganizationsSuspendOrganizationResponse = (OrganizationPublic);
+
+export type OrganizationsUnsuspendOrganizationData = {
+    organizationId: string;
+};
+
+export type OrganizationsUnsuspendOrganizationResponse = (OrganizationPublic);
 
 export type OrganizationsExportOrganizationData = {
     organizationId: string;

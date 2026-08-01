@@ -66,17 +66,19 @@ async def _get_membership(
     session: SessionDep,
     current_user: CurrentUser,
     organization_id: uuid.UUID,
+    check_active: bool = True,
 ) -> OrganizationMember:
     membership = await find_membership(
         session, organization_id=organization_id, user_id=current_user.id
     )
     if membership is None:
         raise HTTPException(status_code=403, detail="Not a member of this organization")
-    if not membership.active:
-        raise HTTPException(status_code=403, detail="Membership is inactive")
-    org = await session.get(Organization, organization_id)
-    if org is not None and not org.is_active:
-        raise HTTPException(status_code=403, detail="Organization is suspended")
+    if check_active:
+        if not membership.active:
+            raise HTTPException(status_code=403, detail="Membership is inactive")
+        org = await session.get(Organization, organization_id)
+        if org is not None and not org.is_active:
+            raise HTTPException(status_code=403, detail="Organization is suspended")
     return membership
 
 
@@ -85,8 +87,11 @@ async def _require_permission(
     current_user: CurrentUser,
     organization_id: uuid.UUID,
     permission: str,
+    check_active: bool = True,
 ) -> OrganizationMember:
-    membership = await _get_membership(session, current_user, organization_id)
+    membership = await _get_membership(
+        session, current_user, organization_id, check_active=check_active
+    )
     if not has_permission(membership.role, permission):
         raise HTTPException(status_code=403, detail=f"Missing permission: {permission}")
     return membership
@@ -490,6 +495,41 @@ async def suspend_organization(
     await record_audit(
         session,
         action="org.suspend",
+        user_id=current_user.id,
+        organization_id=org.id,
+        entity_type="organization",
+        entity_id=str(org.id),
+    )
+    await session.commit()
+    await session.refresh(org)
+    return org
+
+
+@router.post(
+    "/{organization_id}/unsuspend",
+    response_model=OrganizationPublic,
+)
+async def unsuspend_organization(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    organization_id: uuid.UUID,
+) -> Any:
+    """Re-enable a suspended organization (owner/admin)."""
+    # Must work while the org is suspended, so skip the is_active gate
+    await _require_permission(
+        session, current_user, organization_id, "org:update", check_active=False
+    )
+    org = await get_organization(session, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    org.is_active = True
+    session.add(org)
+    for webhook in await list_webhooks(session, organization_id):
+        await update_webhook(session, webhook, is_active=True)
+    await record_audit(
+        session,
+        action="org.unsuspend",
         user_id=current_user.id,
         organization_id=org.id,
         entity_type="organization",

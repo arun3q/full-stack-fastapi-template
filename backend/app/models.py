@@ -141,13 +141,13 @@ class OrganizationCreate(SQLModel):
 class OrganizationUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     branding: str | None = Field(default=None, max_length=2000)
-    is_active: bool | None = None
 
 
 class OrganizationPublic(SQLModel):
     id: uuid.UUID
     name: str
     slug: str
+    is_active: bool = True
     branding: str | None = None
     created_at: datetime | None = None
 

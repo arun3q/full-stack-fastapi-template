@@ -51,6 +51,15 @@ function OrgSettings() {
     onError: (error: Error) => showErrorToast(error.message),
   })
 
+  const unsuspendMutation = useMutation({
+    mutationFn: () => featureApi.unsuspendOrganization(org!.id),
+    onSuccess: () => {
+      showSuccessToast("Organization re-enabled")
+      queryClient.invalidateQueries({ queryKey: ["organizations"] })
+    },
+    onError: (error: Error) => showErrorToast(error.message),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => featureApi.deleteOrganization(org!.id),
     onSuccess: () => {
@@ -120,6 +129,13 @@ function OrgSettings() {
           Manage {org.name} — membership, ownership, and data.
         </p>
       </div>
+
+      {!org.is_active ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          This organization is suspended. Members can't access org data until
+          it's re-enabled below.
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -191,20 +207,31 @@ function OrgSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Suspend this organization? Members lose access until it's re-enabled.",
-                )
-              ) {
-                suspendMutation.mutate()
-              }
-            }}
-          >
-            Suspend
-          </Button>
+          {org.is_active ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Suspend this organization? Members lose access until it's re-enabled.",
+                  )
+                ) {
+                  suspendMutation.mutate()
+                }
+              }}
+            >
+              Suspend
+            </Button>
+          ) : (
+            <LoadingButton
+              variant="default"
+              disabled={unsuspendMutation.isPending}
+              loading={unsuspendMutation.isPending}
+              onClick={() => unsuspendMutation.mutate()}
+            >
+              Re-enable organization
+            </LoadingButton>
+          )}
           <Button
             variant="outline"
             onClick={() => leaveMutation.mutate()}

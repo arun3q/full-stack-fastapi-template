@@ -831,6 +831,11 @@ export const OrganizationPublicSchema = {
             type: 'string',
             title: 'Slug'
         },
+        is_active: {
+            type: 'boolean',
+            title: 'Is Active',
+            default: true
+        },
         branding: {
             anyOf: [
                 {
@@ -886,17 +891,6 @@ export const OrganizationUpdateSchema = {
                 }
             ],
             title: 'Branding'
-        },
-        is_active: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Is Active'
         }
     },
     type: 'object',

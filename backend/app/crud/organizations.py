@@ -145,8 +145,9 @@ async def remove_member(
 
 
 async def count_members(session: AsyncSession, organization_id: Any) -> int:
+    """Count ACTIVE memberships (SCIM-deactivated members don't consume seats)."""
     members = await list_members(session, organization_id)
-    return len(members)
+    return len([m for m in members if m.active])
 
 
 def generate_invite_token() -> str:
