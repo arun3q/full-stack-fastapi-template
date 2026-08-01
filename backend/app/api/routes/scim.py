@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, EmailStr
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.deps import SessionDep
 from app.core.api_keys import parse_scopes
@@ -140,9 +140,18 @@ async def list_scim_users(
 ) -> dict[str, Any]:
     _, org = ctx
     memberships = await list_members(session, org.id)
+    user_ids = [m.user_id for m in memberships]
+    users = {}
+    if user_ids:
+        users = {
+            u.id: u
+            for u in (
+                await session.exec(select(User).where(col(User.id).in_(user_ids)))
+            ).all()
+        }
     resources = []
     for membership in memberships:
-        user = await session.get(User, membership.user_id)
+        user = users.get(membership.user_id)
         if user is not None:
             resources.append(_user_resource(user, membership))
     start = max(0, startIndex - 1)

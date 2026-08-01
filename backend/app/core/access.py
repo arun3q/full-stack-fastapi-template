@@ -15,6 +15,7 @@ configured, ``require_plan(...)`` and quotas are enforced against the active
 organization's subscription.
 """
 
+import asyncio
 import json
 import uuid
 from typing import Any
@@ -37,6 +38,10 @@ UNLIMITED_PLANS = ("business", "enterprise")
 FREE_PLAN_SLUG = "free"
 
 _ACTIVE_PLAN_TTL = 60
+_MISS = "__none__"
+
+# In-process single-flight locks to dampen cache stampedes within a worker.
+_inflight: dict[str, Any] = {}
 
 
 def _active_plan_cache_key(organization_id: Any) -> str:
@@ -44,7 +49,38 @@ def _active_plan_cache_key(organization_id: Any) -> str:
 
 
 async def invalidate_active_plan(organization_id: Any) -> None:
+    _inflight.pop(_active_plan_cache_key(organization_id), None)
     await cache_delete(_active_plan_cache_key(organization_id))
+
+
+def _plan_to_dict(plan: Plan) -> dict[str, Any]:
+    return {
+        "id": str(plan.id),
+        "slug": plan.slug,
+        "name": plan.name,
+        "amount_cents": plan.amount_cents,
+        "currency": plan.currency,
+        "billing_interval": plan.billing_interval,
+        "is_active": plan.is_active,
+        "trial_days": plan.trial_days,
+        "features": plan.features,
+        "quotas": plan.quotas,
+    }
+
+
+def _plan_from_dict(data: dict[str, Any]) -> Plan:
+    return Plan(
+        id=uuid.UUID(str(data["id"])),
+        slug=str(data["slug"]),
+        name=str(data["name"]),
+        amount_cents=int(data["amount_cents"]),
+        currency=str(data["currency"]),
+        billing_interval=str(data["billing_interval"]),
+        is_active=bool(data["is_active"]),
+        trial_days=int(data.get("trial_days", 0)),
+        features=data.get("features"),
+        quotas=data.get("quotas"),
+    )
 
 
 def is_admin(user: User) -> bool:
@@ -74,33 +110,43 @@ def plan_quota(plan: Plan | None, key: str, default: int = 0) -> int:
 async def get_active_plan(session: AsyncSession, organization_id: Any) -> Plan | None:
     """Return the active organization's current subscription plan, if any.
 
-    Cached per organization (60s) and invalidated on subscription changes.
+    Cached per organization (60s) as the full plan payload (with a miss
+    sentinel) and invalidated on subscription changes. An in-process lock
+    dampens cache stampedes within a worker.
     """
-    cached_id = await cache_get(_active_plan_cache_key(organization_id))
-    if cached_id:
-        plan = await session.get(Plan, uuid.UUID(str(cached_id)))
-        if plan is not None:
-            return plan
-    subscription = (
-        await session.exec(
-            select(Subscription)
-            .where(
-                Subscription.organization_id == organization_id,
-                col(Subscription.status).in_(["active", "trialing", "past_due"]),
+    key = _active_plan_cache_key(organization_id)
+
+    async def _compute() -> Plan | None:
+        subscription = (
+            await session.exec(
+                select(Subscription)
+                .where(
+                    Subscription.organization_id == organization_id,
+                    col(Subscription.status).in_(["active", "trialing", "past_due"]),
+                )
+                .order_by(col(Subscription.created_at).desc())
             )
-            .order_by(col(Subscription.created_at).desc())
-        )
-    ).first()
-    if subscription is None or subscription.plan_id is None:
-        return None
-    plan = await session.get(Plan, subscription.plan_id)
-    if plan is not None:
-        await cache_set(
-            _active_plan_cache_key(organization_id),
-            str(plan.id),
-            ttl_seconds=_ACTIVE_PLAN_TTL,
-        )
-    return plan
+        ).first()
+        plan = None
+        if subscription is not None and subscription.plan_id is not None:
+            plan = await session.get(Plan, subscription.plan_id)
+        if plan is not None:
+            await cache_set(key, _plan_to_dict(plan), ttl_seconds=_ACTIVE_PLAN_TTL)
+        else:
+            await cache_set(key, _MISS, ttl_seconds=_ACTIVE_PLAN_TTL)
+        return plan
+
+    cached = await cache_get(key)
+    if cached is not None:
+        return None if cached == _MISS else _plan_from_dict(cached)
+
+    lock = _inflight.setdefault(key, asyncio.Lock())
+    async with lock:
+        # Double-check after acquiring the lock (another worker may have computed)
+        cached = await cache_get(key)
+        if cached is not None:
+            return None if cached == _MISS else _plan_from_dict(cached)
+        return await _compute()
 
 
 def resolve_features(*, user: User, plan: Plan | None) -> list[str]:

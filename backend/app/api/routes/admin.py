@@ -61,8 +61,21 @@ async def admin_overview(session: ReadSessionDep) -> dict[str, int]:
             )
         )
     ).all()
+    plan_ids = {s.plan_id for s in active_subscriptions if s.plan_id}
+    plans_by_id = {}
+    if plan_ids:
+        plans_by_id = {
+            p.id: p
+            for p in (
+                await session.exec(select(Plan).where(col(Plan.id).in_(plan_ids)))
+            ).all()
+        }
     for subscription in active_subscriptions:
-        plan = await session.get(Plan, subscription.plan_id)
+        plan = (
+            plans_by_id.get(subscription.plan_id)
+            if subscription.plan_id is not None
+            else None
+        )
         if plan is None:
             continue
         quantity = max(subscription.quantity, 1)

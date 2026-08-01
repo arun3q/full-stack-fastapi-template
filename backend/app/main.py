@@ -3,11 +3,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import sentry_sdk
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.requests import Request
 
 from app.api.main import api_router
 from app.api.routes.metrics import router as metrics_router_root
@@ -79,6 +81,7 @@ if settings.all_cors_origins:
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 async def _rate_limit_exceeded_handler(

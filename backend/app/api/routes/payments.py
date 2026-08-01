@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlmodel import col, func, select
 
 from app.api.deps import (
@@ -36,11 +36,12 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 
 @router.get("/plans", response_model=PlansPublic)
 @cached(lambda *args, **kwargs: "plans", ttl_seconds=60)
-async def read_plans(session: ReadSessionDep) -> Any:
+async def read_plans(session: ReadSessionDep, response: Response) -> Any:
     """List all active plans available for subscription."""
     plans = (
         await session.exec(select(Plan).where(Plan.is_active == True))  # noqa: E712
     ).all()
+    response.headers["Cache-Control"] = "public, max-age=300"
     return PlansPublic(
         data=[PlanPublic.model_validate(plan) for plan in plans], count=len(plans)
     )

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.access import billing_enabled, get_active_plan, plan_quota
@@ -96,9 +96,20 @@ async def _require_permission(
 async def read_my_organizations(session: SessionDep, current_user: CurrentUser) -> Any:
     """List the organizations the current user belongs to."""
     memberships = await list_user_memberships(session, current_user.id)
+    org_ids = [m.organization_id for m in memberships]
+    orgs = {}
+    if org_ids:
+        orgs = {
+            org.id: org
+            for org in (
+                await session.exec(
+                    select(Organization).where(col(Organization.id).in_(org_ids))
+                )
+            ).all()
+        }
     data: list[MyOrganizationPublic] = []
     for membership in memberships:
-        org = await get_organization(session, membership.organization_id)
+        org = orgs.get(membership.organization_id)
         if org is None:
             continue
         data.append(
@@ -171,9 +182,18 @@ async def read_members(
     """List the members of an organization (members+)."""
     await _require_permission(session, current_user, organization_id, "org:view")
     memberships = await list_members(session, organization_id)
+    user_ids = [m.user_id for m in memberships]
+    users = {}
+    if user_ids:
+        users = {
+            user.id: user
+            for user in (
+                await session.exec(select(User).where(col(User.id).in_(user_ids)))
+            ).all()
+        }
     data: list[OrganizationMemberPublic] = []
     for membership in memberships:
-        user = await session.get(User, membership.user_id)
+        user = users.get(membership.user_id)
         public = OrganizationMemberPublic.model_validate(membership)
         public.email = user.email if user else None
         public.full_name = user.full_name if user else None

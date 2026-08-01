@@ -41,12 +41,12 @@ async def read_items(
     """
     try:
         if is_staff(current_user):
-            count = await count_items(session)
+            count = None if cursor else await count_items(session)
             items, next_cursor = await list_items(
-                session=session, skip=skip, limit=limit
+                session=session, skip=skip, limit=limit, cursor=cursor
             )
         else:
-            count = await count_items(session, current_org.id)
+            count = None if cursor else await count_items(session, current_org.id)
             items, next_cursor = await list_items(
                 session=session,
                 organization_id=current_org.id,
@@ -58,7 +58,11 @@ async def read_items(
         raise HTTPException(status_code=400, detail="Invalid cursor")
 
     items_public = [ItemPublic.model_validate(item) for item in items]
-    return ItemsPublic(data=items_public, count=count, next_cursor=next_cursor)
+    return ItemsPublic(
+        data=items_public,
+        count=count if count is not None else len(items_public),
+        next_cursor=next_cursor,
+    )
 
 
 @router.get(

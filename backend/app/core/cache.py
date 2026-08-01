@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-CACHE_PREFIX = "cache:"
+CACHE_PREFIX = "cache:v1:"
 
 
 async def cache_get(key: str) -> Any | None:
@@ -23,10 +23,28 @@ async def cache_get(key: str) -> Any | None:
         return None
 
 
+def _serialize(value: Any) -> Any:
+    """JSON-safe serialization for cache values.
+
+    Pydantic models are dumped to a plain JSON dict so a cache hit returns the
+    same shape the endpoint expects (previously the model's ``str()`` repr was
+    stored, which failed response validation on the next request).
+    """
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_serialize(v) for v in value]
+    return value
+
+
 async def cache_set(key: str, value: Any, ttl_seconds: int = 60) -> None:
     try:
         await redis_client.set(
-            f"{CACHE_PREFIX}{key}", json.dumps(value, default=str), ex=ttl_seconds
+            f"{CACHE_PREFIX}{key}",
+            json.dumps(_serialize(value), default=str),
+            ex=ttl_seconds,
         )
     except Exception:
         logger.debug("Redis cache unavailable for key: %s", key)

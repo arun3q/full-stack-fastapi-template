@@ -17,6 +17,10 @@ from app.models import (
 from tests.utils.utils import random_email, random_lower_string
 
 _EXPECTED_INDEXES = [
+    "ix_notification_user_id",
+    "ix_item_org_created",
+    "ix_subscription_org_status",
+    "ix_orgmember_org_user",
     "ix_item_organization_id",
     "ix_session_user_id",
     "ix_session_created_at",
@@ -101,3 +105,23 @@ def test_validate_webhook_url_ssrf_guard() -> None:
         validate_webhook_url("https://10.0.0.1/hook")
     with pytest.raises(ValueError):
         validate_webhook_url("ftp://example.com/hook")
+
+
+def test_cache_serialization_is_json_safe() -> None:
+    """Pydantic models must serialize to a JSON dict, not their str() repr."""
+    from app.core.cache import _serialize
+    from app.models import PlanPublic
+
+    plan = PlanPublic(
+        id=uuid.uuid4(),
+        name="Pro",
+        slug="pro",
+        amount_cents=1999,
+        currency="usd",
+        billing_interval="month",
+        is_active=True,
+    )
+    dumped = _serialize(plan)
+    assert isinstance(dumped, dict)
+    assert dumped["slug"] == "pro"
+    assert isinstance(dumped["id"], str)
