@@ -410,7 +410,7 @@ class PaymentEvent(SQLModel, table=True):
     amount_cents: int | None = None
     currency: str | None = Field(default=None, max_length=10)
     status: str | None = Field(default=None, max_length=50)
-    raw: str = Field(default="{}", max_length=10000)
+    raw: str = Field(default="{}", max_length=30000)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
