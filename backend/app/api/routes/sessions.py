@@ -23,6 +23,7 @@ from app.models import (
     SessionPublic,
     SessionsPublic,
     Token,
+    User,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -39,6 +40,10 @@ async def refresh_access_token(
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     if db_session.expires_at is not None and db_session.expires_at < datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    user = await session.get(User, db_session.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Inactive user")
 
     # Rotate
     await revoke_session(session, db_session)

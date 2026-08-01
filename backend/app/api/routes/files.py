@@ -1,3 +1,4 @@
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -10,7 +11,7 @@ from app.api.deps import (
 )
 from app.core.access import billing_enabled, get_active_plan, is_staff
 from app.core.audit import record_audit
-from app.core.storage import StorageError, upload_file
+from app.core.storage import StorageError, download_file, upload_file
 from app.core.usage import check_quota, record_usage
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -49,6 +50,7 @@ async def upload(
             filename=file.filename or "file",
             content=content,
             content_type=file.content_type or "application/octet-stream",
+            organization_id=current_org.id,
         )
     except StorageError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -70,3 +72,27 @@ async def upload(
     )
     await session.commit()
     return {"url": url}
+
+
+@router.get(
+    "/download/{organization_id}/{file_name}",
+    dependencies=[Depends(require_org_permission("item:view"))],
+)
+async def download(
+    current_org: CurrentOrg,
+    organization_id: uuid.UUID,
+    file_name: str,
+    _session: SessionDep,
+    _current_user: CurrentUser,
+) -> Any:
+    """Org-scoped download of an object whose key is namespaced by the org."""
+    from fastapi.responses import Response
+
+    if organization_id != current_org.id:
+        raise HTTPException(status_code=403, detail="Cross-tenant access denied")
+    key = f"uploads/{organization_id}/{file_name}"
+    try:
+        body = await download_file(key=key)
+    except StorageError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return Response(content=body, media_type="application/octet-stream")

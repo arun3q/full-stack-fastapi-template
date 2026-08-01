@@ -39,6 +39,7 @@ from app.models import (
     Item,
     Message,
     MyOrganizationPublic,
+    Organization,
     OrganizationCreate,
     OrganizationInvite,
     OrganizationInviteCreate,
@@ -70,6 +71,11 @@ async def _get_membership(
     )
     if membership is None:
         raise HTTPException(status_code=403, detail="Not a member of this organization")
+    if not membership.active:
+        raise HTTPException(status_code=403, detail="Membership is inactive")
+    org = await session.get(Organization, organization_id)
+    if org is not None and not org.is_active:
+        raise HTTPException(status_code=403, detail="Organization is suspended")
     return membership
 
 
@@ -187,6 +193,12 @@ async def invite_member(
 ) -> Any:
     """Invite a user by email (admin+). Respects the plan's seat quota."""
     await _require_permission(session, current_user, organization_id, "member:invite")
+
+    # Invites can never grant the owner role (ownership is transferred, not granted)
+    if body.role not in ("admin", ORG_ROLE_MEMBER, "viewer"):
+        raise HTTPException(
+            status_code=400, detail="Invite role must be admin, member, or viewer"
+        )
 
     org = await get_organization(session, organization_id)
     if org is None:
@@ -349,17 +361,39 @@ async def update_member_role_route(
     await _require_permission(session, current_user, organization_id, "member:manage")
     if role not in (ORG_ROLE_OWNER, "admin", ORG_ROLE_MEMBER, "viewer"):
         raise HTTPException(status_code=400, detail="Invalid role")
-    member = await update_member_role(
-        session, organization_id=organization_id, user_id=user_id, role=role
+
+    current = await find_membership(
+        session, organization_id=organization_id, user_id=user_id
     )
-    if member is None:
+    if current is None:
         raise HTTPException(status_code=404, detail="Member not found")
 
-    # Only the owner may promote/demote the owner role
-    if member.role == ORG_ROLE_OWNER or role == ORG_ROLE_OWNER:
+    # Only the owner may promote/demote the owner role (check the CURRENT role,
+    # not the post-update one, to prevent admins silently demoting the owner)
+    if current.role == ORG_ROLE_OWNER or role == ORG_ROLE_OWNER:
         await _require_permission(
             session, current_user, organization_id, "member:remove"
         )
+
+    # Forbid demoting the last owner
+    if current.role == ORG_ROLE_OWNER and role != ORG_ROLE_OWNER:
+        owner_count = len(
+            (
+                await session.exec(
+                    select(OrganizationMember).where(
+                        OrganizationMember.organization_id == organization_id,
+                        OrganizationMember.role == ORG_ROLE_OWNER,
+                    )
+                )
+            ).all()
+        )
+        if owner_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot demote the last owner")
+
+    member = await update_member_role(
+        session, organization_id=organization_id, user_id=user_id, role=role
+    )
+    assert member is not None
 
     await session.commit()
     await session.refresh(member)

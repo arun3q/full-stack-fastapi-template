@@ -16,10 +16,13 @@ from app.core.access import get_active_plan, resolve_features
 from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.jobs import send_email_background
+from app.core.orgs import ORG_ROLE_OWNER
 from app.core.security import get_password_hash, verify_password
+from app.crud.sessions import revoke_all_sessions
 from app.models import (
     Item,
     Message,
+    OrganizationMember,
     PlanPublic,
     ResendVerificationEmail,
     UpdatePassword,
@@ -126,6 +129,10 @@ async def update_user_me(
             raise HTTPException(
                 status_code=409, detail="User with this email already exists"
             )
+        # Changing email must re-verify the new address and drop old sessions
+        if user_in.email.lower() != (current_user.email or "").lower():
+            current_user.is_verified = False
+            await revoke_all_sessions(session, current_user.id)
     user_data = user_in.model_dump(exclude_unset=True)
     current_user.sqlmodel_update(user_data)
     session.add(current_user)
@@ -152,6 +159,8 @@ async def update_password_me(
         )
     hashed_password = get_password_hash(body.new_password)
     current_user.hashed_password = hashed_password
+    # Rotating the password invalidates all existing refresh sessions
+    await revoke_all_sessions(session, current_user.id)
     session.add(current_user)
     await session.commit()
     return Message(message="Password updated successfully")
@@ -191,6 +200,32 @@ async def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
         raise HTTPException(
             status_code=403, detail="Super users are not allowed to delete themselves"
         )
+    # Do not leave other orgs ownerless: block deletion while owning orgs with members
+    owned_orgs = (
+        await session.exec(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == current_user.id,
+                OrganizationMember.role == ORG_ROLE_OWNER,
+            )
+        )
+    ).all()
+    for membership in owned_orgs:
+        other_members = (
+            await session.exec(
+                select(OrganizationMember).where(
+                    OrganizationMember.organization_id == membership.organization_id,
+                    OrganizationMember.user_id != current_user.id,
+                )
+            )
+        ).all()
+        if other_members:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "You own an organization with other members; "
+                    "transfer ownership before deleting your account"
+                ),
+            )
     await session.delete(current_user)
     await session.commit()
     return Message(message="User deleted successfully")

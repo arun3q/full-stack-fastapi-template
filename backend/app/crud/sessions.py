@@ -64,3 +64,11 @@ async def list_active_sessions(
 
 async def get_session(session: AsyncSession, session_id: Any) -> Session | None:
     return await session.get(Session, session_id)
+
+
+async def revoke_all_sessions(session: AsyncSession, user_id: Any) -> int:
+    """Revoke every active refresh session for a user. Returns the count."""
+    active = await list_active_sessions(session, user_id)
+    for db_session in active:
+        await revoke_session(session, db_session)
+    return len(active)

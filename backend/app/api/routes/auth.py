@@ -70,6 +70,8 @@ async def oauth_callback(
 
     if account:
         user = await session.get(User, account.user_id)
+        if user is not None and not user.is_active:
+            raise HTTPException(status_code=403, detail="Inactive user")
     else:
         user = None
         if email:

@@ -4,7 +4,7 @@ from sqlmodel import select
 
 from app import crud
 from app.core.config import settings
-from app.models import User, UserCreate
+from app.models import ORG_ROLE_MEMBER, OrganizationMember, User, UserCreate
 from tests.utils.user import user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
@@ -60,7 +60,7 @@ async def test_scim_provision_user(client: TestClient, db: AsyncSession) -> None
     assert patched.status_code == 200
     assert patched.json()["active"] is False
 
-    # SCIM delete == deactivate
+    # SCIM delete == deactivate (scoped to this org's membership only)
     deleted = client.delete(
         f"{settings.API_V1_STR}/scim/v2/Users/{user_id}",
         headers=scim_headers,
@@ -69,7 +69,17 @@ async def test_scim_provision_user(client: TestClient, db: AsyncSession) -> None
     user = (await db.exec(select(User).where(User.email == email))).first()
     assert user is not None
     await db.refresh(user)
-    assert user.is_active is False
+    assert user.is_active is True  # platform account untouched
+    membership = (
+        await db.exec(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.role == ORG_ROLE_MEMBER,
+            )
+        )
+    ).first()
+    assert membership is not None
+    assert membership.active is False
 
 
 async def test_scim_groups(client: TestClient, db: AsyncSession) -> None:

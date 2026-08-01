@@ -171,6 +171,7 @@ class OrganizationMember(SQLModel, table=True):
         foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
     )
     role: str = Field(default=ORG_ROLE_MEMBER, max_length=30)
+    active: bool = True
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

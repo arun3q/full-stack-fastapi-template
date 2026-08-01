@@ -158,6 +158,11 @@ async def admin_set_user_status(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = is_active
+    if not is_active:
+        # Revoke all refresh sessions so the account can't keep refreshing
+        from app.crud.sessions import revoke_all_sessions
+
+        await revoke_all_sessions(session, user.id)
     session.add(user)
     await session.commit()
     await session.refresh(user)

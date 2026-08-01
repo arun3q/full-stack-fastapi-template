@@ -94,6 +94,18 @@ async def saml_acs(request: Request, session: SessionDep) -> RedirectResponse:
         session.add(user)
         await session.flush()
     else:
+        # Account-takeover guard: never silently log into an existing account
+        # that has a password, unless SSO linking is explicitly enabled.
+        if user.hashed_password and not settings.SAML_ALLOW_PASSWORD_LINKING:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "An account with this email already has a password; "
+                    "contact your administrator to enable SSO linking"
+                ),
+            )
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Inactive user")
         if full_name:
             user.full_name = full_name
         session.add(user)

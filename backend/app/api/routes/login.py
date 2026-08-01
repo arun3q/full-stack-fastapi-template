@@ -17,6 +17,7 @@ from app.core.ratelimit import (
     limiter,
     record_login_failure,
 )
+from app.crud.sessions import revoke_all_sessions
 from app.models import Message, NewPassword, Session, Token, UserPublic, UserUpdate
 from app.utils import (
     generate_password_reset_token,
@@ -194,6 +195,9 @@ async def reset_password(session: SessionDep, body: NewPassword) -> Message:
         db_user=user,
         user_in=user_in_update,
     )
+    # Password reset invalidates all existing refresh sessions
+    await revoke_all_sessions(session, user.id)
+    await session.commit()
     return Message(message="Password updated successfully")
 
 

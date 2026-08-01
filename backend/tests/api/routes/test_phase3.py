@@ -235,11 +235,6 @@ async def test_cross_tenant_org_operations_blocked(
     attacker_headers = _headers(
         _login(client, attacker_email, attacker_password)["access_token"]
     )
-    attacker_org = client.post(
-        f"{settings.API_V1_STR}/organizations/",
-        headers=attacker_headers,
-        json={"name": "Attacker"},
-    ).json()
 
     victim_email, victim_password = await _create_user(db)
     victim_headers = _headers(

@@ -165,6 +165,9 @@ class Settings(BaseSettings):
     SAML_IDP_METADATA: str | None = None
     SAML_ATTRIBUTE_EMAIL: str = "email"
     SAML_ATTRIBUTE_NAME: str = "displayname"
+    # When false, SAML refuses to log into an existing account that has a
+    # password (prevents IdP-driven account takeover). Enable to allow linking.
+    SAML_ALLOW_PASSWORD_LINKING: bool = False
 
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:
