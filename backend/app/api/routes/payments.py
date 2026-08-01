@@ -237,7 +237,7 @@ async def payments_webhook(request: Request, _session: SessionDep) -> dict[str, 
     obj = data.get("data", {}).get("object", {}) or data.get("payload", {}).get(
         "subscription", {}
     ).get("entity", {})
-    await enqueue_job(
+    job_id = await enqueue_job(
         "process_payment_event_job",
         provider=provider.name,
         event_type=event_type or "unknown",
@@ -246,6 +246,19 @@ async def payments_webhook(request: Request, _session: SessionDep) -> dict[str, 
         currency=obj.get("currency"),
         raw=payload.decode("utf-8"),
     )
+    if job_id is None:
+        # Redis/queue unavailable: process inline so the event is never lost
+        from app.core.jobs.payments import process_payment_event_job
+
+        await process_payment_event_job(
+            {},
+            provider=provider.name,
+            event_type=event_type or "unknown",
+            provider_event_id=str(provider_event_id),
+            amount_cents=obj.get("amount_total") or obj.get("amount"),
+            currency=obj.get("currency"),
+            raw=payload.decode("utf-8"),
+        )
     return {"received": True}
 
 
